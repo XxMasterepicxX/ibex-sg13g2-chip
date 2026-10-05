@@ -1,0 +1,8 @@
+; Port text goes to datatype 25, where IHP's LVS deck reads labels (layers_definitions.lvs).
+text 8    8:25
+text 10  10:25
+text 30  30:25
+text 50  50:25
+text 67  67:25
+text 126 126:25
+text 134 134:25

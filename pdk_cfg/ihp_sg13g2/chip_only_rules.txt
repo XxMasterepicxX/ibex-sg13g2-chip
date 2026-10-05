@@ -1,0 +1,7 @@
+# Global density rules and 800 um window coverage rules from the deck's density.drc: they apply to the finished chip, which flow/check.py judges
+# through chip_fill.sh's filled chip, never to a block's own GDS.
+AFil.g AFil.g1 GFil.g
+M1.j M2.j M3.j M4.j M5.j M1.k M2.k M3.k M4.k M5.k
+TM1.c TM1.d TM2.c TM2.d
+AFil.g2 AFil.g3
+M1Fil.h M2Fil.h M3Fil.h M4Fil.h M5Fil.h M1Fil.k M2Fil.k M3Fil.k M4Fil.k M5Fil.k

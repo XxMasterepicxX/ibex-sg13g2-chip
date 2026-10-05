@@ -1,0 +1,31 @@
+{
+  "name": "RVSoC8787",
+  "design_type": "D",
+  "technology": "IHP",
+  "unique_id": "8787",
+  "license": "Apache-2.0",
+  "trl": 0,
+  "sealring_x": 1.708,
+  "sealring_y": 1.753,
+  "repository": "",
+  "pdk_version": "IHP-Open-PDK 5e6d592e, 2026-09-01",
+  "process": "SG13CMOS",
+  "dependencies": {},
+  "tools": {
+    "synthesis and place and route": "Synopsys Fusion Compiler Y-2026.03-SP2",
+    "timing": "Synopsys PrimeTime Y-2026.03-SP2",
+    "extraction": "Synopsys StarRC",
+    "equivalence": "Synopsys Formality Y-2026.03-SP2",
+    "power integrity": "Ansys RedHawk-SC",
+    "DRC and LVS": "KLayout 0.30.5 with IHP decks",
+    "simulation": "Synopsys VCS",
+    "scan test": "Synopsys TestMAX"
+  },
+  "top_cell_name": "RVSoC8787",
+  "release": {
+    "version": "v.1.0.0",
+    "gds": "release/v.1.0.0/gds/RVSoC8787.gds",
+    "netlist": "release/v.1.0.0/netlist/RVSoC8787.cdl",
+    "doc": "release/v.1.0.0/doc"
+  }
+}

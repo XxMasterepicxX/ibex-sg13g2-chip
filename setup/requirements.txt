@@ -1,0 +1,13 @@
+docopt==0.6.2
+gdstk==1.0.1
+klayout==0.30.5
+numpy==2.4.6
+pandas==3.0.6
+pcpp==1.30
+psutil==7.2.2
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+scipy==1.17.1
+six==1.17.0
+termcolor==3.3.0
+tqdm==4.70.1

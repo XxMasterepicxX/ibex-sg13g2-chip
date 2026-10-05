@@ -1,0 +1,29 @@
+# Downloaded or built by setup/setup.sh
+/pdk/
+/tools/*
+!/tools/klayout.sh
+!/tools/bin/
+/tools/bin/*
+!/tools/bin/sv2v
+/setup/setup.log
+/ihp/fill/*.lym
+/ihp/sram_lef/
+/ihp/**/*.db
+/ihp/**/*.ndm/
+/ihp/**/*.nxtgrd
+/ihp/**/*.tluplus
+/ihp/rc/**/sg13g2/
+/ihp/**/*.log
+/ihp/**/*_output.txt
+/ihp/**/*.ems
+/ihp/**/PreFrameCheck/
+/ihp/**/crte_*.txt
+/ihp/**/Synopsys_stack_trace_*.txt
+/ihp/**/*.svf
+
+# Chip builds
+/runs/
+
+# Tool droppings
+cds.lib
+__pycache__/

@@ -1,0 +1,10 @@
+current_design flash_soc
+clock -name clk -domain d_clk -period 20 -edge {0 10}
+clock -tag board -domain d_board -period 100 -edge {0 50}
+input -name sclk -clock board
+input -name sdi -clock board
+input -name load_en -clock board
+reset -name rst_n -value 0 -async
+set_case_analysis -name test_mode -value 0
+set_case_analysis -name scan_en -value 0
+set_case_analysis -name scan_in -value 0
