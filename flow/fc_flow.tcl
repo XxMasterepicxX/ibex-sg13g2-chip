@@ -79,8 +79,7 @@ proc flash_set_checked_app_option {name value} {
 
 set STAGES {setup synth floorplan pg place cts route final}
 set START_AT [expr {[info exists env(START_AT)] ? $env(START_AT) : "setup"}]
-# One guidance file per session. A resumed session writing the shared file replaced 319 KB of
-# synthesis guidance with 10 KB, and Formality then failed 1971 of 2373 points.
+# One guidance file per session, so a resumed session cannot overwrite the guidance of earlier ones.
 set_svf $OUT/out/$DESIGN.$START_AT.svf
 proc run_stage {name} {
   global STAGES START_AT OUT DESIGN
@@ -89,8 +88,7 @@ proc run_stage {name} {
   if {$i < $s} { return 0 }
   if {$i == $s && $s > 0} {
     open_lib $OUT/$DESIGN.nlib
-    # An ECO resumes from the last final block, so it keeps every earlier ECO. From the route block, chip_v6_noise's
-    # noise ECO silently dropped chip_v6_eco's shift-mode hold fix.
+    # An ECO resumes from the last final block, so it keeps every earlier ECO.
     if {!($START_AT eq "final" && [info exists ::env(ECO_CHANGES)] && ![catch {open_block $DESIGN/final}])} {
       open_block $DESIGN/[lindex $STAGES [expr {$s - 1}]]
     }
@@ -114,7 +112,7 @@ proc stage_done {name} {
   if {[info exists ::env(STOP_AFTER)] && $::env(STOP_AFTER) eq $name} { puts "FLASH_STOPPED_AFTER $name"; exit }
 }
 
-# Primary supply pins connect automatically; body pins some libraries expose (SKY130 VPB/VNB) do not.
+# Primary supply pins connect automatically; separate body pins, EXTRA_PG in pdk.tcl, do not.
 # The pad ring: pads, IO fillers and corners.
 proc io_ring_cells {} {
   global IO_FILLERS IO_CORNER
@@ -129,7 +127,7 @@ proc pg_connect {} {
     if {[sizeof_collection $pins]} { connect_pg_net -net [get_nets $net] $pins }
   }
   # IO fillers and corners are created after the power intent maps the pads' supply pins, so the automatic
-  # connection gave their bus pins no net or the core's: 1340 filler-to-pad shorts on sky130_chip_v2.
+  # connection would give their supply pins no net or the core's.
   if {[llength $IO_RING] && [info exists IO_SUPPLY_PINS]} {
     set ring [io_ring_cells]
     foreach {pin net} $IO_SUPPLY_PINS {
@@ -150,8 +148,7 @@ if {[run_stage setup]} {
     read_verilog -top $DESIGN $NETLIST_IN
     link_block
   } else {
-    # A failed analyze leaves units from earlier runs in the WORK library, and elaborate would build from them
-    # (sv_ibex: a package used before its file was read, yet the flow finished on stale RTL).
+    # A failed analyze leaves units from earlier runs in the WORK library, and elaborate would build from them.
     if {![analyze -format sverilog -define $DEFINES $RTL_FILES]} { puts "FLASH_ERROR analyze failed"; exit 1 }
     if {![elaborate $DESIGN]} { puts "FLASH_ERROR elaborate failed"; exit 1 }
     set_top_module $DESIGN
@@ -171,14 +168,13 @@ if {[run_stage setup]} {
     connect_supply_net VSS -ports VSS
   }
   if {[llength $IO_RING]} {
-    # Only the IO supplies the ring uses: GF180's single-supply ring maps DVDD and DVSS to the core nets, and unused
-    # IOVDD and IOVSS ports were extra nets in LVS.
+    # Only the IO supplies the ring uses; an unused IOVDD or IOVSS port would be an extra net in LVS.
     foreach n {IOVDD IOVSS} {
       if {$n in [dict values $IO_SUPPLY_PINS]} { create_supply_port $n; create_supply_net $n; connect_supply_net $n -ports $n }
     }
-    # The pads' IO supply pins join these nets in the power intent too. Otherwise FC gave them the domain's
-    # primary supply, the core voltage, matched no IO library pane, and timed every pad with the slow library at
-    # all three corners (chip_v5: 17 pads). IO_SUPPLY_PINS {pin net ...} comes from pdk.tcl.
+    # The pads' IO supply pins join these nets in the power intent too. Otherwise FC gives them the core supply,
+    # matches no IO library, and times every pad with the slow library at all corners.
+    # IO_SUPPLY_PINS {pin net ...} comes from pdk.tcl.
     foreach {pin net} $IO_SUPPLY_PINS {
       connect_supply_net $net -ports [get_pins -of_objects [get_cells -filter is_io==true] -filter "name == $pin"]
     }
@@ -203,9 +199,8 @@ if {[run_stage setup]} {
     if {[sizeof_collection [get_supply_nets -quiet IOVDD]]} { set_voltage [dict get $IO_VDD $c] -corners $c -object_list [get_supply_nets IOVDD] }
     if {[sizeof_collection [get_supply_nets -quiet IOVSS]]} { set_voltage 0.0 -corners $c -object_list [get_supply_nets IOVSS] }
     set_temperature $t -corners $c
-    # FC picks each corner's library by process, voltage and temperature. A process number no library has makes
-    # it fall back to the nearest match: SAED32's slow and fast libraries are 0.99 and 1.01, and with 1 at every
-    # corner FC timed all three corners with the typical library.
+    # FC picks each corner's library by process, voltage and temperature, and falls back to the nearest match when
+    # no library has the process number. CORNER_PROCESS, optional in pdk.tcl, gives each corner its own.
     set_process_number [expr {[info exists CORNER_PROCESS] ? [dict get $CORNER_PROCESS $c] : 1}] -corners $c
     create_scenario -name func_$c -mode func -corner $c
     current_scenario func_$c
@@ -213,7 +208,7 @@ if {[run_stage setup]} {
     source $FLOW/constraints.tcl
   }
   # Scan shift, for designs with scan chains: a hold-only scenario per corner, so optimization fixes the chains'
-  # hold too. Functional only, chip_v6 failed shift hold in PrimeTime on 734 endpoints, down to -0.135 ns.
+  # hold too.
   set shift_mode [expr {[info exists SCANDEF] || [info exists DFT_SETUP]}]
   if {$shift_mode} {
     create_mode shift
@@ -242,8 +237,6 @@ if {[run_stage setup]} {
 
   flash_set_routing_layers $ROUTE_MIN_LAYER $MAX_LAYER
   # Crosstalk-aware timing, routing and optimization, so Fusion Compiler sees what PrimeTime SI signs off.
-  # Without it ibex_fixed met 19.4 ns in FC but missed 20 ns by 1.47 ns in PrimeTime SI at the slow corner
-  # (+0.46 ns with SI off): about 1.9 ns of crosstalk delay that place and route never saw.
   set_app_options -name time.si_enable_analysis -value true
   set_app_options -name route.global.crosstalk_driven -value true
   set_app_options -name route.track.crosstalk_driven -value true
@@ -258,9 +251,9 @@ if {[run_stage setup]} {
 # Synthesize to real cells before sizing the floorplan: utilization is a ratio of
 # mapped cell area to core area, and unmapped logic has no real area yet.
 if {[run_stage synth]} {
-  # One net on two ports: StarRC names a SPEF port after its DEF net, so the second port vanished and PrimeTime
-  # dropped the net's parasitics (PARA-006, uio_oe[6] and [7] of tt_um_find_the_damn_issue, 9-25). A buffer per
-  # port gives each its own net. It acts in compile_fusion only; session.tcl keeps optimization from merging them.
+  # One net on two ports: StarRC names a SPEF port after its DEF net, so the second port loses its parasitics in
+  # PrimeTime (PARA-006). A buffer per port gives each its own net. It acts in compile_fusion only; session.tcl
+  # keeps optimization from merging them.
   set_fix_multiple_port_nets -all -buffer_constants
   if {[info exists NETLIST_IN]} {
     # Already mapped. The scan DEF from Design Compiler lets placement reorder the chains.
@@ -268,8 +261,8 @@ if {[run_stage synth]} {
   } else {
     # SAFETY_TMR, optional in run_cfg: {distance_um register_pattern ...}. Synthesis replaces each matching register
     # by three and a voter; placement keeps the three apart by the distance, and their clock and reset come from
-    # separate tree branches. set_safety_register_rule asks for the replacement. mark_safety_register only records
-    # redundancy that already exists, and with it compile_fusion left all 32 counter registers single.
+    # separate tree branches. set_safety_register_rule asks for the replacement; mark_safety_register only records
+    # redundancy that already exists.
     if {[info exists SAFETY_TMR]} {
       create_safety_register_rule -type triple_mode -name tmr -distance [lindex $SAFETY_TMR 0] -split_pin_types {clock reset}
       set regs {}
@@ -322,8 +315,7 @@ if {[run_stage floorplan]} {
     initialize_floorplan -core_utilization $UTIL -core_offset $CORE_OFFSET -shape R \
       {*}[expr {[info exists ASPECT] ? [list -side_ratio [list 1 $ASPECT]] : {}}]
   }
-  # MACROS coordinates are die coordinates. A macro outside the core sits in the pad ring: sky130_chip_v1's SRAMs at
-  # y 100, under a 201 um core offset, routed their pins under the pads and gave 381 shorts.
+  # MACROS coordinates are die coordinates. A macro outside the core would sit in the pad ring.
   lassign [get_attribute [get_core_area] bbox] mcl mcu
   foreach {inst x y orient} $MACROS {
     set_cell_location [get_cells $inst] -coordinates [list $x $y] -orientation $orient -fixed
@@ -336,9 +328,8 @@ if {[run_stage floorplan]} {
     # VA_GUARD, optional in run_cfg: a gap around each area in um. Without it a row's rail inside the area meets the
     # neighbouring rail of the other supply end to end.
     set guard [expr {[info exists VA_GUARD] ? [list -guard_band [list [list $VA_GUARD $VA_GUARD]]] : {}}]
-    # The core rails run the full width of the core's bottom and top edges, so an area on either edge has the
-    # primary supply's rail under its edge row's pins: a VDD to VDDL short on saed_ibex_mv2, which
-    # check_pg_connectivity reported only as 110 floating cells.
+    # The core rails run the full width of the core's bottom and top edges, so an area on either edge would have the
+    # primary supply's rail under its edge row's pins, a short check_pg_connectivity reports only as floating cells.
     lassign [get_attribute [get_core_area] bbox] core_ll core_ur
     set cy0 [lindex $core_ll 1]
     set cy1 [lindex $core_ur 1]
@@ -358,7 +349,7 @@ if {[run_stage floorplan]} {
     puts "FLASH_MACROS [get_object_name $macro_cells]"
   }
   # Hard placement blockages, optional in run_cfg: PLACE_BLOCKAGES {{{llx lly} {urx ury}} ...}. Cells in the
-  # strips beside a macro row sit where rails are cut and no mesh stripe lands: 564 floating cells on flash_soc.
+  # strips beside a macro row would sit where rails are cut and no mesh stripe lands, and float.
   set i 0
   foreach box $PLACE_BLOCKAGES { create_placement_blockage -boundary $box -type hard -name flash_pb[incr i] }
   if {[llength $HOTSPOT_BLOCKAGES] % 2} {
@@ -378,25 +369,24 @@ if {[run_stage floorplan]} {
   puts "FLASH_HOTSPOT_BLOCKAGES_APPLIED requested=$hs_requested created=$hs_created"
   puts "FLASH_TRACKS [sizeof_collection [get_tracks]]"
   # Every port, including the clock, gets a real location; an unplaced clock port
-  # silently disabled clock tree synthesis in the old runs.
+  # silently disables clock tree synthesis.
   if {[llength $IO_RING]} {
     # The chip's ports are the pads' pad pins, so the pads are placed, not the ports.
     set unringed [remove_from_collection [get_cells -filter is_io==true] [get_cells [concat {*}[dict values $IO_RING]]]]
     if {[sizeof_collection $unringed]} { error "IO cells missing from IO_RING: [get_object_name $unringed]" }
     create_io_ring -name io_ring
     foreach side {bottom right top left} { add_to_io_guide io_ring.$side [get_cells [dict get $IO_RING $side]] }
-    # Scan reordering once rewired the chain straight to the scan_out port and deleted its now-unused pad.
+    # Otherwise scan reordering can wire the chain straight to the scan_out port and delete its pad.
     set_dont_touch [get_cells [concat {*}[dict values $IO_RING]]] true
     place_io
-    # place_io spreads pads evenly, so gaps can be fractional, and IO fillers come in whole microns
-    # (DPI-089 on 0.5 um slivers). Pads and corners are whole microns wide, so snapping every pad to a
-    # whole-micron origin, on a die with whole-micron edges, leaves gaps the fillers can close.
-    # The placed bounding box, not the origin: a rotated pad's origin is not its lower-left corner, and using
-    # it pushed the R90 and R180 sides 180 um outside the die. IO_SNAP in pdk.tcl is the narrowest IO filler,
-    # 1 um by default (IHP); SAED32's narrowest is 5 um, and its die edges are multiples of 5 to match.
+    # place_io spreads pads evenly, so gaps can be fractional, and IO fillers come in whole microns (DPI-089).
+    # Pads and corners are whole microns wide, so snapping every pad to a whole-micron origin, on a die with
+    # whole-micron edges, leaves gaps the fillers can close. The snap uses the placed bounding box, since a
+    # rotated pad's origin is not its lower-left corner. IO_SNAP, optional in pdk.tcl, is the narrowest IO
+    # filler, 1 um by default.
     if {![info exists IO_SNAP]} { set IO_SNAP 1.0 }
     # Only the coordinate along the side is snapped; the other keeps place_io's flush position against the die
-    # edge. Snapping both pushed SKY130's 210.965 um GPIO pads 0.405 um past a die edge set by the 2.72 um rows.
+    # edge.
     lassign [get_attribute [current_block] boundary_bbox] dll dur
     foreach side {bottom right top left} {
       foreach_in_collection pad [get_cells [dict get $IO_RING $side]] {
@@ -406,7 +396,7 @@ if {[run_stage floorplan]} {
       }
     }
     # IO_BONDPAD_TOP, optional in pdk.tcl: the library draws its bond pad at the cell's top edge, the reverse of what
-    # place_io assumes, so each pad is turned 180 degrees within its footprint (SKY130).
+    # place_io assumes, so each pad is turned 180 degrees within its footprint.
     set bondpad_top [expr {[info exists IO_BONDPAD_TOP] && $IO_BONDPAD_TOP}]
     if {$bondpad_top} { io_rotate_180 [get_cells [concat {*}[dict values $IO_RING]]] }
     set facing [io_facing_errors]
@@ -422,25 +412,22 @@ if {[run_stage floorplan]} {
       create_io_corner_cell -reference_cell $IO_CORNER [list io_ring.$a io_ring.$b]
     }
     # IO_CORNER_ORIENT, optional in pdk.tcl: {bl orient br orient tr orient tl orient}. FC orients a corner as if the
-    # library drew it for the bottom left. SAED32's CORNER is drawn for the bottom right, so FC mirrored every
-    # corner's rails against its neighbours': 32 VSS to IOVSS shorts on M6 to M9 in saed_chip_v1's PG DRC.
+    # library drew it for the bottom left, which mirrors the rails of a corner drawn any other way.
     if {[info exists IO_CORNER_ORIENT]} {
       lassign $dll dx0 dy0; lassign $dur dx1 dy1
       foreach_in_collection c [get_cells -filter "ref_name == $IO_CORNER"] {
         lassign [get_attribute $c boundary_bbox] ll ur
         set k [expr {[lindex $ll 1] - $dy0 < $dy1 - [lindex $ur 1] ? "b" : "t"}][expr {[lindex $ll 0] - $dx0 < $dx1 - [lindex $ur 0] ? "l" : "r"}]
         set_cell_location $c -coordinates $ll -orientation [dict get $IO_CORNER_ORIENT $k] -ignore_fixed -fixed
-        # Then flush to the die corner: a corner cell that is not square (SKY130, 200 x 204 um) changes its extent when
-        # reoriented, which left one corner 4 um short of the die edge and another 4 um past it.
+        # Then flush to the die corner: a corner cell that is not square changes its extent when reoriented.
         lassign [get_attribute $c boundary_bbox] ll ur
         set w [expr {[lindex $ur 0] - [lindex $ll 0]}]; set h [expr {[lindex $ur 1] - [lindex $ll 1]}]
         set_cell_location $c -coordinates [list [expr {[string index $k 1] eq "l" ? $dx0 : $dx1 - $w}] [expr {[string index $k 0] eq "b" ? $dy0 : $dy1 - $h}]] -ignore_fixed -fixed
       }
     }
     create_io_filler_cells -reference_cells $IO_FILLERS
-    # IO_BUS_NETS, optional in pdk.tcl: {pin net ...}, signal buses that run through every ring cell by abutment
-    # (SKY130's AMUXBUS_A and B). Left open, each cell's piece is its own net and every abutment is a short:
-    # 914 filler-to-filler shorts on met4 on sky130_chip_v2.
+    # IO_BUS_NETS, optional in pdk.tcl: {pin net ...}, signal buses that run through every ring cell by abutment.
+    # Left open, each cell's piece is its own net and every abutment is a short.
     if {[info exists IO_BUS_NETS]} {
       set ring [io_ring_cells]
       foreach {pin net} $IO_BUS_NETS {
@@ -492,8 +479,7 @@ if {[run_stage pg]} {
   set masters {}
   set i 0
   # PG_VIA_ARRAY, optional in pdk.tcl: {contact_code {columns rows} ...} caps an array's size. A rail-to-stripe
-  # stack as wide as the stripe puts a bar on every layer between them. On SAED32 those 3 um bars crossed about
-  # ten M4 tracks at each rail, and route_opt left 24 signal-to-VSS shorts on them (saed_ibex1).
+  # stack as wide as the stripe puts a bar on every layer between them, which can block signal tracks.
   if {![info exists PG_VIA_ARRAY]} { set PG_VIA_ARRAY {} }
   foreach {code spacing} $PG_VIA_RULES {
     set dim [expr {[dict exists $PG_VIA_ARRAY $code] ? [list -via_array_dimension [dict get $PG_VIA_ARRAY $code]] : {}}]
@@ -517,7 +503,7 @@ if {[run_stage pg]} {
     [list [list horizontal_layer: $MESH_H_LAYER] [list width: $MESH_H_W] {spacing: interleaving} [list pitch: $MESH_PITCH] [list offset: $MESH_H_OFFSET]]]
   # DENSITY_MESH, optional: {{layer vertical|horizontal width pitch offset} ...}, more mesh stripes on layers the
   # mesh does not use. IHP's global minimum metal density is 35% and its fill cannot reach it on Metal2 and Metal3
-  # of a routed block (fill_ibex_signoff: 28.7% and 27.6%), so the rest has to be drawn metal.
+  # of a routed block, so the rest has to be drawn metal.
   if {[info exists DENSITY_MESH]} {
     foreach m $DENSITY_MESH {
       lassign $m dl dd dw dp doff
@@ -530,9 +516,7 @@ if {[run_stage pg]} {
   set strategies {core_ring core_mesh cell_rails}
   create_pg_std_cell_conn_pattern cell_rails -layers [list $RAIL_LAYER] -rail_width $RAIL_W
   # RAIL_STRAPS, optional in pdk.tcl: {layer width pitch offset}. Thin straps just above the rails take one via to
-  # each rail they cross, and the mesh reaches the rails only through them. On SAED32 a stack from the mesh
-  # straight down to the 0.06 um rails had no clean shape: stripe-wide it blocked tracks, a column put M1 off the
-  # rail (saed_ibex3: 306 M1 spacing), a row collided with the mesh crossing above, a single cut failed min area.
+  # each rail they cross, and the mesh reaches the rails only through them.
   if {[info exists RAIL_STRAPS]} {
     lassign $RAIL_STRAPS rs_layer rs_w rs_pitch rs_off
     create_pg_mesh_pattern rail_straps -layers [list [list [list vertical_layer: $rs_layer] [list width: $rs_w]       {spacing: interleaving} [list pitch: $rs_pitch] [list offset: $rs_off]]]
@@ -553,11 +537,9 @@ if {[run_stage pg]} {
     # Rails also stop at placement blockages; the mesh stays there, since the macro straps extend to it.
     if {[llength $PLACE_BLOCKAGES]} { lappend rblock [list {placement_blockages: all}] }
     # MACRO_CONN, optional in run_cfg: {scattered_pin {hor_layer ver_layer} {hor_w ver_w}}, for macros whose
-    # supply pins are small shapes, not long pins. SAED32's SRAM1RW1024x8 has 121 0.3 um M5 squares per supply
-    # along its top edge: long-pin straps reached none, and all 8 SRAMs floated on both supplies (saed_chip_v1).
-    # Extensions on the pins' own layer need no via onto them; on the layer above, 528 of 1936 pin vias failed.
-    # An optional fourth element limits which pin layers are used. GF180's SRAM also has Metal1 and Metal2 supply
-    # pins, and FC's vias onto them collide with the SRAM's own (gf180_chip_v4: 19165 Via1 and Via2 markers).
+    # supply pins are small shapes, not long pins. Extensions on the pins' own layer need no via onto them.
+    # An optional fourth element limits which pin layers are used, for macros whose own vias would collide with
+    # FC's vias onto their lower supply pins.
     if {[info exists MACRO_CONN]} {
       lassign $MACRO_CONN mtype mlayers mwidths mpins
       create_pg_macro_conn_pattern macro_straps -pin_conn_type $mtype -layers $mlayers -width $mwidths         {*}[expr {$mpins ne "" ? [list -pin_layers $mpins] : {}}]
@@ -568,10 +550,9 @@ if {[run_stage pg]} {
     lappend strategies macro_straps
   }
   # An area's first and last rows share their outer rail with the row beyond the area. FC's voltage_areas: region
-  # and blockage both leave that rail to the core, so the core's VDD rail ran under those rows' VDDL pins, and the
-  # area's straps stopped short of it (saed_ibex_mv4: 141 cells, all in the two edge rows). The area's rails and
-  # straps therefore cover one rail width past its top and bottom, and the core's rails and straps are blocked
-  # there and across VA_GUARD at the sides. VA_GUARD keeps the row beyond the edge rail empty.
+  # and blockage both leave that rail to the core, which would put the core's supply under those rows' pins. The
+  # area's rails and straps therefore cover one rail width past its top and bottom, and the core's rails and straps
+  # are blocked there and across VA_GUARD at the sides. VA_GUARD keeps the row beyond the edge rail empty.
   set va_poly {}
   if {[llength $va_names]} {
     lappend mblock [list [list voltage_areas: $va_names]]
@@ -624,8 +605,7 @@ if {[run_stage pg]} {
   }
   set_pg_strategy_via_rule pg_vias -via_rule $pgvias_compile
   # MACRO_STRAPS, optional in run_cfg: {{net layer y width} ...}, horizontal supply straps across the core from
-  # ring to ring for macro pins to extend to. Over a row of macros the mesh is blocked, and SAED32's SRAM row
-  # spans nearly the core's width, so the pins had nothing to reach.
+  # ring to ring for macro pins to extend to, where the mesh is blocked over a row of macros.
   if {[info exists MACRO_STRAPS]} {
     lassign [get_attribute [get_core_area] bbox] mcl mcu
     foreach st $MACRO_STRAPS {
@@ -635,8 +615,7 @@ if {[run_stage pg]} {
     }
   }
   # compile_pg trims each vertical stripe back to its last crossing with the horizontal mesh. Where a placement
-  # blockage edge falls between mesh stripes, the rows next to it get no stripes: on saed_chip_v2 VDD stopped
-  # 10 um and VSS 23 um short of the SRAM blockage, and 398 and 906 cells floated. A VDD and VSS strap on the
+  # blockage edge falls between mesh stripes, the rows next to it get no stripes. A VDD and VSS strap on the
   # mesh's horizontal layer along every blockage edge that faces core rows gives the stripes a last crossing there.
   lassign [get_attribute [get_core_area] bbox] ecl ecu
   foreach box $PLACE_BLOCKAGES {
@@ -663,10 +642,9 @@ if {[run_stage pg]} {
         -x_pitch $xp -x_offset $xo -y_pitch $yp -prefix ${sw}_
       connect_power_switch -source [get_ports $src] -port_name ${sw}_sleep -mode daisy -direction vertical -voltage_area $va
       puts "FLASH_POWER_SWITCHES $sw [sizeof_collection [get_cells -hierarchical -quiet -filter ref_name==$lc]]"
-      # A switch's supply input is a small M1 island (SAED32 HEAD2X16: VDDG), which route_group left unconnected:
-      # every VDD shape and cell floated in saed_ibex_pg1. An alignment strap runs along each row of switches over
-      # the islands and crosses the stripes. The islands must sit clear of the stripes, whose via stacks down to the
-      # strap took their place (864 cut spacing errors), and between the area's M2 rail straps (48 M2 shorts).
+      # A switch's supply input can be a small Metal1 island that route_group leaves unconnected. An alignment strap
+      # runs along each row of switches over the islands and crosses the stripes. The islands must sit clear of the
+      # stripes, whose via stacks down to the strap would take their place, and between the area's rail straps.
       # The straps need the switches' supply pins connected first.
       pg_connect
       lassign $POWER_SWITCH_ALIGN al_layer al_dir al_w
@@ -674,10 +652,9 @@ if {[run_stage pg]} {
         [list [list lib_cells: $lc] [list layer: $al_layer] [list direction: $al_dir] [list width: $al_w]]
       set_pg_strategy ${sw}_align -voltage_areas $va -pattern [list [list name: ${sw}_align] [list nets: $anet]]
       compile_pg -strategies ${sw}_align
-      # compile_pg drops the vias from the stripes once the strap is wide enough to take them; at the pin's 0.056 um
-      # none fit. It leaves the pins below, which run parallel to the strap. In its default mode create_pg_vias
-      # refused every one of those (PGR-051), yet check_but_no_fix creates all 144 on saed_ibex_pg1 and reports
-      # them DRC clean, and check_pg_drc agrees.
+      # compile_pg drops the vias from the stripes once the strap is wide enough to take them, but leaves the pins
+      # below, which run parallel to the strap. In its default mode create_pg_vias refuses those (PGR-051), so they
+      # are made with check_but_no_fix.
       foreach {v n b} $VOLTAGE_AREAS { if {$v eq $va} { set vabox $b } }
       create_pg_vias -nets $anet -within_bbox $vabox -from_layers $al_layer -to_types pwrswitch_pin -allow_parallel_objects \
         -drc check_but_no_fix
@@ -687,19 +664,18 @@ if {[run_stage pg]} {
   if {[llength $IO_RING]} {
     # Core supply from the pads. Each net gets straps on a layer where its pad rail is the one nearer the core
     # (IHP: VDD on Metal3, VSS on Metal4 and Metal5). A strap starts inside that rail, so it joins the rail on
-    # its own layer, and ends at the core boundary, covering the core ring just outside it. Running 10 um into
-    # the core crossed the mesh's via stacks, and FC cut 7 straps there, leaving floating pieces. The nets'
-    # straps are offset from each other so their via stacks down to the core ring never meet.
+    # its own layer, and ends at the core boundary, covering the core ring just outside it. Running further into
+    # the core would cross the mesh's via stacks. The nets' straps are offset from each other so their via stacks
+    # down to the core ring never meet.
     # A strap also keeps clear of the pads' signal pins: FC notches a strap around a pin it crosses, and the
-    # notch is narrower than the wide-metal spacing (chip_v3: 2 M3.e at u_pgpio7's c2p). A strap that would
-    # come near one moves along the ring in 5 um steps, and is left out if no spot within 45 um is clear.
+    # notch is narrower than the wide-metal spacing. A strap that would come near one moves along the ring in
+    # 5 um steps, and is left out if no spot within 45 um is clear.
     # IO_STRAP_W, optional in pdk.tcl, is the strap width, 10 um by default. IO_STRAP_GRID, optional, centres
-    # straps on multiples of it from the die edge, the pad abutment lines, where the pad abstract shows its rails
-    # as pins (SAED32: 0.19 um pins at each pad edge, nothing between). Straps then move in steps of the grid.
+    # straps on multiples of it from the die edge, the pad abutment lines, for pad abstracts that show their rails
+    # as pins only at the pad edges. Straps then move in steps of the grid.
     # An IO_CORE_STRAPS entry may add {land_layer land_length}: for a rail with the other net's rail between it
-    # and the core on every layer it has (SAED32: VDD nearest the core on M6 to M9, VSS behind it), the strap
-    # runs on a layer above the rails, and a patch of land_layer on the rail, drawn over the rail's own metal,
-    # takes a via from it. -start is the strap's centre (measured on SAED32).
+    # and the core on every layer it has, the strap runs on a layer above the rails, and a patch of land_layer on
+    # the rail, drawn over the rail's own metal, takes a via from it. -start is the strap's centre.
     lassign [get_attribute [current_block] boundary_bbox] dll dur
     lassign [get_attribute [get_core_area] bbox] cll cur
     lassign $dll dx0 dy0; lassign $dur dx1 dy1; lassign $cll cx0 cy0; lassign $cur cx1 cy1
@@ -735,7 +711,7 @@ if {[run_stage pg]} {
           foreach d $steps {
             set p [expr {$pos + $d}]
             if {$grid} { set p [expr {$base + round(($p - $base) / $grid) * $grid}] }
-            # The strap's footprint with half a strap and 1 um to spare, the margin chip_v6 was built with.
+            # The strap's footprint with half a strap and 1 um to spare.
             set s0 [expr {$p - $sw - 1}]; set s1 [expr {$p + $sw + 1}]
             set clear 1
             foreach bb $pinboxes {
@@ -749,8 +725,7 @@ if {[run_stage pg]} {
               if {$hit} { set clear 0; break }
             }
             # IO_STRAP_OVER, optional in pdk.tcl: the ring cells a strap may cross. A pad's metal where the strap
-            # lands may be another supply, which its abstract hides: on saed_chip_v4, VSS straps over IOVSS and
-            # IOVDD pads shorted VSS to IOVSS in the foundry LVS, and split IOVDD into 42 pieces.
+            # lands may be another supply, which its abstract hides.
             if {$clear && [info exists IO_STRAP_OVER]} {
               set fp [expr {$dir eq "vertical" ? [list [list $s0 $lo] [list $s1 $hi]] : [list [list $lo $s0] [list $hi $s1]]}]
               foreach_in_collection c [get_cells -quiet -intersect $fp -filter "is_io == true || [join [lmap r [concat $IO_FILLERS $IO_CORNER] {set r "ref_name == $r"}] { || }]"] {
@@ -778,10 +753,8 @@ if {[run_stage pg]} {
     puts "FLASH_IO_STRAPS_SKIPPED $skipped"
     # IO_PAD_STRAPS, optional in run_cfg: {cell net layer width ...}. One strap per pad of that cell, from the pad's
     # core edge to the core boundary, across the core ring, for pads whose core supply pin is a row of fingers on
-    # their core edge below every ring rail. GF180MCU: every ring rail is on Metal3 to Metal5 with DVSS nearest the
-    # core, so a strap on a rail layer would short VDD to it; dvdd and dvss offer DVDD and DVSS fingers on Metal2
-    # instead. The strap overlaps the fingers by 0.3 um, inside dvss's 1 um fingers and clear of the pads' Metal2
-    # obstruction, and takes vias where it crosses its own net's ring.
+    # their core edge below every ring rail. The strap overlaps the fingers by 0.3 um and takes vias where it
+    # crosses its own net's ring.
     if {[info exists IO_PAD_STRAPS]} {
       set npad 0
       foreach {pcell pnet player pw} $IO_PAD_STRAPS {
@@ -804,8 +777,7 @@ if {[run_stage pg]} {
       puts "FLASH_IO_PAD_STRAPS $npad"
     }
     # create_pg_strap drops vias only onto the next layer. A strap that crosses the core ring on a layer further
-    # up gets no stack: saed_chip_v3's M9 VDD straps floated over the M6 and M7 ring on both sides. Stack them
-    # explicitly in the ring's zone outside each core edge.
+    # up gets no stack, so the stacks are made explicitly in the ring's zone outside each core edge.
     set rz [expr {2 * $RING_W + $RING_SPACING + 5.0}]
     # PGR-049 and PGR-050 say a box needs no new via; PGR-051, a via blocked by DRC, stays visible.
     suppress_message {PGR-049 PGR-050}
@@ -826,9 +798,9 @@ if {[run_stage pg]} {
     puts "FLASH_IO_RING_VIAS $ring_vias"
     unsuppress_message {PGR-049 PGR-050}
     # The pads' supply rails are stacked on every metal with their own vias, which the pad abstract hides, so
-    # FC's vias inside a pad land on top of them (chip_v1: 2319 TV1.b and 1936 V4.b). Every strap joins its
+    # FC's vias inside a pad land on top of them and break the via spacing rules. Every strap joins its
     # rail on its own layer, so it stays connected without them. IO_REMOVE_PG_VIAS 0 in pdk.tcl keeps them, for
-    # pads whose rails sit on one metal with nothing below, where FC's vias are the only way in (SAED32: M9).
+    # pads whose rails sit on one metal with nothing below, where FC's vias are the only way in.
     if {![info exists IO_REMOVE_PG_VIAS]} { set IO_REMOVE_PG_VIAS 1 }
     set io_vias 0
     if {$IO_REMOVE_PG_VIAS} {
@@ -872,8 +844,8 @@ if {[run_stage pg]} {
     }
   }
   # PG_VIA_KEEPOUT, optional in pdk.tcl: {layer margin ...}. A rail via stack's pad on a layer it crosses the
-  # wrong way gets a zero-spacing signal blockage, margin um larger. The router kept less than minimum spacing
-  # to these pads, tagged as cell pin connections, on SAED32 M5 (saed_ibex3: 3 left after three rip-ups).
+  # wrong way gets a zero-spacing signal blockage, margin um larger, since the router treats these pads as cell
+  # pin connections and can keep less than minimum spacing to them.
   if {[info exists PG_VIA_KEEPOUT]} {
     set nko 0
     foreach {layer margin} $PG_VIA_KEEPOUT {
@@ -889,7 +861,7 @@ if {[run_stage pg]} {
   }
   # Supply ports get real terminals so write_gds labels them; LVS compares top-level ports strictly and treats
   # an unlabeled supply as missing. VDD and VSS take a ring shape. A voltage area's supply has no ring, so it
-  # takes one of its stripes: unlabeled, VDDL was the one port ICV LVS rejected on saed_ibex_mv6.
+  # takes one of its stripes.
   foreach n [lsort -unique [concat {VDD VSS} [lmap {va net box} $VOLTAGE_AREAS {set net}]]] {
     if {![sizeof_collection [get_ports -quiet $n]]} continue
     set shp [get_shapes -quiet -of_objects [get_nets $n] -filter "shape_use == ring && layer_name == $RING_H_LAYER"]
@@ -897,7 +869,7 @@ if {[run_stage pg]} {
     create_terminal -of_objects [index_collection $shp 0]
   }
   # Wide-metal spacing: a line next to a wide PG shape needs extra space. FC's route check does not apply
-  # this between signal wires and PG stripes (34 M4.e markers in ibex_base, 0 in check_routes), so every
+  # this between signal wires and PG stripes, so every
   # long edge of a wide PG shape gets a zero-spacing signal blockage of the required width.
   set keepouts 0
   set layer_filter [join [lmap l [dict keys $WIDE_STEPS] {format "layer_name == %s" $l}] " || "]
@@ -924,17 +896,15 @@ if {[run_stage pg]} {
   puts "FLASH_WIDE_PG_KEEPOUTS $keepouts"
   puts "FLASH_PG_TERMINALS [sizeof_collection [get_terminals -of_objects [get_ports {VDD VSS}]]]"
   # Floating rails or stripes after PG mean rows the grid never reaches; stop here, not after placement.
-  # The check runs once the supply terminals and pad straps exist. Without a terminal, FC picks its own reference:
-  # V-2023.12 took the core grid and called the pads floating, Y-2026.03 takes the pads and called the whole GF180
-  # chip grid floating, 1,022 VDD wires, so every row was blocked; at this point it finds 0, newtools_0925, 9-25.
+  # The check runs once the supply terminals and pad straps exist; without a terminal, FC picks its own reference
+  # and can call the whole grid floating.
   check_pg_connectivity -nets {VDD VSS} > $OUT/rpt/pg_conn_pg.rpt
   set pgfloat [regexp -all -inline {Number of floating wires: *(\d+)} [read [set fh [open $OUT/rpt/pg_conn_pg.rpt]]]]
   close $fh
   puts "FLASH_PG_FLOATING_WIRES [lmap {m n} $pgfloat {set n}]"
-  # A cell row whose rail no stripe reaches stays unpowered however the straps are placed: on saed_chip_v3 the last
-  # full row under the SRAM blockage floated even with edge straps, because it depends on where the blockage edge
-  # falls on the row grid. Each floating rail gets a hard placement blockage over its two rows and is removed,
-  # so no cell can land on an unpowered rail.
+  # A cell row whose rail no stripe reaches can stay unpowered even with the edge straps, depending on where a
+  # blockage edge falls on the row grid. Each floating rail gets a hard placement blockage over its two rows and
+  # is removed, so no cell can land on an unpowered rail.
   set row_blocks 0
   catch {open_drc_error_data ${DESIGN}_floatingPG.err}
   if {[sizeof_collection [get_drc_error_data -quiet ${DESIGN}_floatingPG.err]]} {
@@ -954,7 +924,7 @@ if {[run_stage pg]} {
   }
   puts "FLASH_PG_ROW_BLOCKAGES $row_blocks"
   # Before routing every macro signal pin is unconnected, and each 0.26 um Metal2 SRAM pin square reads as a
-  # min-area error (192 on flash_soc). The final check keeps the default, where an unconnected pin is real.
+  # min-area error. The final check keeps the default, where an unconnected pin is real.
   check_pg_drc -check_min_metal_area_on_pins false > $OUT/rpt/pg_drc_floorplan.rpt
   stage_done pg
 }
@@ -962,8 +932,8 @@ if {[run_stage pg]} {
 # ---------------------------------------------------------------- placement
 if {[run_stage place]} {
   # RUN_NDR, optional in run_cfg: {spacing S width W}, a routing rule with those multipliers on every signal net,
-  # set before placement so placement sees the room it takes. Greg Cieslewski, 9-24: for rules the router cannot
-  # see, widen the route spacing or width. A bad value is logged and the run goes on without it.
+  # set before placement so placement sees the room it takes. For rules the router cannot see, widen
+  # the route spacing or width. A bad value is logged and the run goes on without it.
   if {[info exists RUN_NDR]} {
     if {[catch {
       create_routing_rule flash_ndr -default_reference_rule -multiplier_spacing [dict get $RUN_NDR spacing] -multiplier_width [dict get $RUN_NDR width]
@@ -971,10 +941,10 @@ if {[run_stage place]} {
     } err]} { puts "FLASH_NDR failed: $err" } else { puts "FLASH_NDR $RUN_NDR on [sizeof_collection [get_nets -hierarchical -filter {net_type == signal}]] signal nets" }
   }
   # A block input port has no driver inside the block, so its net has no diffusion to discharge
-  # antenna charge: IHP flagged 106 such nets on ibex_signoff (boot_addr_i[*], 0 drivers). A buffer at
+  # antenna charge, and IHP's antenna deck flags it. A buffer at
   # every signal input except the clock gives each long route a driver; magnet placement holds the
   # buffers against their ports so the undriven stub stays short.
-  # Only ports that drive something: inputs synthesis left unused (low boot_addr_i bits) have no net.
+  # Only ports that drive something: inputs synthesis left unused have no net.
   # Input pads already buffer each chip input, so a pad-ring design skips this.
   set in_ports {}
   if {![llength $IO_RING]} {
@@ -998,8 +968,7 @@ if {[run_stage place]} {
   pg_connect
   # SECONDARY_PG_NETS, optional in run_cfg: supplies that reach cells through a secondary pin, as the second supply
   # of a level shifter or the always-on supply of a retention flop. They are routed like signals, right after
-  # placement: once clock_opt has run its global route, FC skips route_group (ZRT-627), and saed_ibex_mv1 was
-  # left with 458 unconnected level shifter supplies.
+  # placement: once clock_opt has run its global route, FC skips route_group (ZRT-627).
   if {[info exists SECONDARY_PG_NETS]} {
     route_group -nets [get_nets $SECONDARY_PG_NETS]
     check_pg_connectivity -check_std_cell_pins all -nets $SECONDARY_PG_NETS > $OUT/rpt/pg_conn_secondary.rpt
@@ -1028,15 +997,17 @@ if {[run_stage cts]} {
   clock_opt
   # Decaps carry their own Metal1, so they go in before routing and the router works around them.
   # Inserted after routing they collide with Metal1 routes, get deleted, and the gaps they leave
-  # break NWell notch rules (IHP NW.b: 665 deleted, 2 NW.b in ibex_base).
+  # break NWell notch rules (IHP NW.b).
   create_stdcell_fillers -lib_cells [lib_cells_named $DECAP_CELLS]
   pg_connect
   report_clock_qor > $OUT/rpt/clock_qor.rpt
   report_clock_qor -type latency > $OUT/rpt/clock_latency.rpt
   check_clock_trees > $OUT/rpt/check_clock_trees.rpt
-  # The clock routes must be DRC clean here: routing will not touch them later, so an error left now stays
-  # (Greg Cieslewski, liaison meeting 9-24). They are the only signal routes yet, so a plain check covers them;
-  # check_routes -nets on the clock nets reports "DRCs = not checked" on this version. ihp_base1: 294 here.
+  # The clock routes must be DRC clean here. They are the only detail
+  # routes yet, so a plain check covers them; check_routes -nets on the clock nets reports "DRCs = not checked"
+  # on this version. clock_opt can leave clock wires too close to the Metal1 rails, and the decaps above land their
+  # own Metal1 near more. route_eco on the clock nets repairs them in place; route_group -all_clock_nets does not.
+  route_eco -nets [get_nets -hierarchical -quiet -filter "net_type == clock"] -reroute modified_nets_first_then_others
   if {[catch {check_routes -open_net false > $OUT/rpt/check_routes_cts.rpt} err]} {
     puts "FLASH_CTS_ROUTE_DRC check_failed $err"
   } else {
@@ -1051,13 +1022,11 @@ if {[run_stage route]} {
   route_auto
   route_opt
   # route_opt's ECO routing can leave DRCs that route_auto had cleared, and its own incremental pass does not
-  # remove them (saed_ibex2: 0 after route_auto, 6 after route_opt, 8 after route_detail -incremental). Ripping
-  # up the signal nets in the markers and rerouting them clears them (6 to 1 in one pass): the repair ladder's
+  # remove them. Ripping up the signal nets in the markers and rerouting them clears them: the repair ladder's
   # R2, run here up to three times. Supply nets are never ripped up.
   for {set pass 1} {$pass <= 3} {incr pass} {
     check_routes > $OUT/rpt/route_cleanup_$pass.rpt
-    # check_routes' own count decides. The zroute.err error data can hold stale markers: on saed_ibex_mv2 it held
-    # 5245 while check_routes found 0, and the loop ripped up 290 clean nets three times.
+    # check_routes' own count decides; the zroute.err error data can hold stale markers.
     set fh [open $OUT/rpt/route_cleanup_$pass.rpt]
     regexp {Total number of DRCs = (\d+)} [read $fh] -> drcs
     close $fh
@@ -1099,8 +1068,8 @@ if {[run_stage route]} {
     set nets [lsort -unique $nets]
     puts "FLASH_ROUTE_CLEANUP pass=$pass drcs=$drcs markers=[sizeof_collection $errs] signal_nets=[llength $nets]"
     if {![llength $nets]} break
-    # Rip-up fixes local damage. Hundreds of marker nets means the design is out of routing capacity, and on
-    # IHP and SAED32 alike more repair only costs hours (saed_squeeze M4_u0.60: 3559 nets at 42% M2 overflow).
+    # Rip-up fixes local damage. Hundreds of marker nets means the design is out of routing capacity, and more
+    # repair only costs hours.
     if {[llength $nets] > 300} {
       puts "FLASH_ROUTE_INFEASIBLE signal_nets=[llength $nets]: out of routing capacity; relax a layer or area"
       break
@@ -1109,13 +1078,10 @@ if {[run_stage route]} {
     route_eco -nets [get_nets $nets] -max_detail_route_iterations 80
   }
   # ICV_RUNSET, optional in pdk.tcl: the IC Validator DRC runset. Fusion Compiler runs it in-design and reroutes
-  # what it flags, the signoff rules its own router does not know: saed_ibex4 had route DRC 0 and 1211 ICV
-  # violations, 24 after this, with timing and LVS unchanged. The in-design check reads the design saved on disk,
-  # so the block is saved first; its after-check ran on the stale copy until it was. It also skips rules (137 on
-  # SAED32), so standalone ICV at signoff stays the check.
-  # REDUNDANT_VIAS, optional in pdk.tcl: double single-cut vias where there is room, for yield. On saed_ibex8's
-  # routed block it doubled 18% of VIA1 and over 90% of VIA2, with route DRC still 0. Before the in-design ICV
-  # fix, so that check sees the doubled vias.
+  # what it flags, the signoff rules its own router does not know. The in-design check reads the design saved on
+  # disk, so the block is saved first. It also skips some rules, so standalone ICV at signoff stays the check.
+  # REDUNDANT_VIAS, optional in pdk.tcl: double single-cut vias where there is room, for yield. This runs before
+  # the in-design ICV fix, so that check sees the doubled vias.
   if {[info exists REDUNDANT_VIAS] && $REDUNDANT_VIAS} {
     add_redundant_vias
     redirect -file $OUT/rpt/redundant_vias.rpt { report_design -routing }
@@ -1141,16 +1107,15 @@ if {[run_stage final]} {
     # A hold ECO inserts buffers PrimeTime could not place; they go next to the pins they drive.
     if {[sizeof_collection [get_cells -quiet -hierarchical -filter "physical_status == unplaced"]]} { place_eco_cells -unplaced_cells }
     # Only the resized, moved and new cells are legalized, on free sites first; a neighbour is pushed only when a cell would
-    # move over 5 um. legalize_placement -incremental moved an untouched nand4_1 475 um beside an inv_4 upsized to
-    # inv_8, and its net went from 1.8 to 291 um: CMOS5L slow setup -0.098 to -1.640 ns, reg_cmos5l_eco, 9-25.
+    # move over 5 um. legalize_placement -incremental can move untouched cells far and stretch their nets.
     set eco {}
     set leaf [get_cells -quiet -hierarchical -filter "is_hierarchical == false"]
     foreach n [get_object_name $leaf] r [get_attribute $leaf ref_name] o [get_attribute $leaf origin] {
       if {![dict exists $before $n] || [dict get $before $n] ne [list $r $o]} { lappend eco $n }
     }
     puts "FLASH_ECO_CELLS [llength $eco]"
-    # The CTS-stage decaps fill every gap, so with no free site the legalizer failed, "illegal for all sites"
-    # (ECO-126); a decap under a changed cell is removed instead, and the fillers below close what is left.
+    # The CTS-stage decaps fill every gap, so with no free site the legalizer fails (ECO-126); a decap under a
+    # changed cell is removed instead, and the fillers below close what is left.
     if {[llength $eco]} {
       place_eco_cells -cells [get_cells $eco] -legalize_only -legalize_mode minimum_physical_impact -displacement_threshold 5 \
         -remove_filler_references $DECAP_CELLS
@@ -1198,15 +1163,15 @@ if {[run_stage final]} {
 
   # Every port's net carries the port's name before anything is written. A level shifter on a port leaves the
   # port's name on the net before the shifter and a new net, ls_N, on the port. The Verilog then aliases the port
-  # to ls_N with an assign, while the DEF, and so the SPEF, keep the port's name on the net before the shifter:
-  # PrimeTime put those parasitics on the port's net and left 260 nets unannotated (saed_ibex_mv5).
+  # to ls_N with an assign, while the DEF, and so the SPEF, keep the port's name on the net before the shifter,
+  # and PrimeTime would put those parasitics on the wrong net.
   set renamed 0
   set tied 0
   foreach_in_collection port [get_ports] {
     set pn [get_object_name $port]
     set net [get_nets -quiet -of_objects $port]
     # An unused input has no net, and write_def gives it one named _dummynetN. StarRC then names the SPEF port
-    # after that net and PrimeTime cannot find it: 59 PARA-124 on the pipe cleaner tt_um_coloquinte_moosic, 9-25.
+    # after that net and PrimeTime cannot find it (PARA-124).
     if {![sizeof_collection $net] && ![sizeof_collection [get_nets -quiet $pn]]} {
       connect_net -net [create_net $pn] $port
       incr tied
@@ -1228,9 +1193,9 @@ if {[run_stage final]} {
   foreach p [concat {*}[dict values $IO_RING]] {
     if {![sizeof_collection [get_cells -quiet $p]]} { error "pad $p is missing from the finished chip" }
   }
-  # A chip's signal ports are the pads' pad pins, so the ports themselves have no geometry. StarRC then inferred
-  # each port from the overlapping pad pin and lost the top-level connection on 2 of 8 GPIO outputs of
-  # saed_chip_v2, which PrimeTime rejected (PARA-006). A terminal on the pad pin gives every port its shape.
+  # A chip's signal ports are the pads' pad pins, so the ports themselves have no geometry. StarRC then infers
+  # each port from the overlapping pad pin and can lose the top-level connection, which PrimeTime rejects
+  # (PARA-006). A terminal on the pad pin gives every port its shape.
   if {[llength $IO_RING]} {
     set port_terms 0
     foreach_in_collection port [get_ports -quiet -filter "port_type == signal"] {
@@ -1255,8 +1220,8 @@ if {[run_stage final]} {
     $OUT/out/$DESIGN.pg.v
   write_def $OUT/out/$DESIGN.def
   if {[info exists UPF_FILE]} { save_upf $OUT/out/$DESIGN.upf }
-  # GDS_UNITS, optional in pdk.tcl: database units per micron. FC's default, 10000, turned the 45-degree rail paths
-  # in GF180's IO corner into outlines off the 5 nm grid: 832 OFFGRID markers, 0 when written at the library's 1000.
+  # GDS_UNITS, optional in pdk.tcl: database units per micron. FC's default, 10000, can put a library's 45-degree
+  # shapes off the manufacturing grid; writing at the library's own units keeps them on it.
   write_gds -hierarchy all -long_names -lib_cell_view frame {*}[expr {[info exists GDS_UNITS] ? [list -units $GDS_UNITS] : {}}] \
     -merge_files [concat $GDS_CELLS $EXTRA_GDS] -merge_gds_top_cell $DESIGN -layer_map $GDS_MAP -output_pin all $OUT/out/$DESIGN.gds
   check_legality -verbose > $OUT/rpt/legality_final.rpt

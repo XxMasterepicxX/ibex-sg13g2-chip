@@ -7,8 +7,7 @@ set PDK_CFG    $env(HOME)/flash/pdk_cfg/ihp_sg13g2
 
 # Libraries. The IHP antenna deck counts any contacted diffusion over 0.16 um2 on a net as a protection
 # diode (antenna.drc: diode = nactiv_con.join(pactiv_con), has_diode = area > 0.16), so driver drains
-# protect and the unmodified cell LEF is right. (ndm_v2, which stripped driver diffusion, was built on a
-# misreading of the rules text and is not used.)
+# protect and the unmodified cell LEF is right.
 set NDM_LIB    $PDK_WORK/ndm/sg13g2_stdcell.ndm
 set DB_DIR     $PDK_WORK/db
 set TLUP       $PDK_WORK/rc/sg13g2_typ.tluplus
@@ -75,7 +74,7 @@ set WIDE_STEPS {Metal2 {0.39 0.24 10.0 0.60} Metal3 {0.39 0.24 10.0 0.60} Metal4
 # 20000 / 500 with one, where "diode" is any contacted diffusion over 0.16 um2 on the net. Mode 3 counts
 # all lower-layer metal, like IHP's cumulative Ant.b. diode_ratio {v0 v1 v2 v3}: ratio = (protection + v1)
 # * v2 + v3 when protection > v0. The nets IHP still flags on a block are input ports with no driver
-# inside it (boot_addr_i[*] on ibex); the flow buffers inputs at the pin for that.
+# inside it; the flow buffers inputs at the pin for that.
 set ANT_ENABLE      1
 set ANT_MODE        3
 set ANT_DIODE_MODE  2
@@ -93,5 +92,5 @@ set ECO_HOLD_BUFFERS {sg13g2_dlygate4sd1_1 sg13g2_dlygate4sd2_1 sg13g2_dlygate4s
 # Buffers PrimeTime may insert in a noise ECO to split a victim net; see pt_signoff.tcl.
 set ECO_BUFFERS {sg13g2_buf_2 sg13g2_buf_4}
 # SRAM halo, unless the run sets one: the standard-cell N-well overhangs the cell by 0.24 um and the SRAM N-well
-# reaches its edge, so NW.b1, 1.80 um, needs about 2.04 um. ihp_chip_halo2 had 45 NW.b1 at 2 um, halo2p5 none, 9-25.
+# reaches its edge, so NW.b1, 1.80 um, needs about 2.04 um.
 if {![info exists MACRO_HALO]} { set MACRO_HALO 2.5 }

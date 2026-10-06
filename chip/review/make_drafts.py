@@ -36,7 +36,7 @@ for c in corners:
         if pin.endswith('/A_BIST_CLK') and inst in lines:
             inactive.append({'pin': pin,
                              'reason': 'The SRAM BIST port is unused. A_BIST_EN, A_BIST_CLK and A_BIST_MEN are tied low, so the macro always runs from A_CLK and this clock pin never toggles.',
-                             'proof': f"designs/flash_soc/rtl_v2/flash_soc.v lines {lines[inst]} tie A_BIST_CLK, A_BIST_EN and A_BIST_MEN to 1'b0. In out/flash_chip.v they are driven by sg13g2_tielo cells. PrimeTime holds the pin at 0 with set_case_analysis from chip/bist_constants.sdc."})
+                             'proof': f"designs/flash_soc/rtl/flash_soc.v lines {lines[inst]} tie A_BIST_CLK, A_BIST_EN and A_BIST_MEN to 1'b0. In out/flash_chip.v they are driven by sg13g2_tielo cells. PrimeTime holds the pin at 0 with set_case_analysis from chip/bist_constants.sdc."})
         else:
             summary.append(f'UNEXPECTED unclocked pin {pin} in {c}; not drafted, find out why it has no clock')
 (out / 'timing_waivers.json').write_text(json.dumps({'reviewed_by': '', 'reviewed_on': '', 'inactive_clocks': sorted(inactive, key=lambda w: w['pin'])}, indent=2))

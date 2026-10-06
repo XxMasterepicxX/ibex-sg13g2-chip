@@ -66,8 +66,8 @@ close $fh
 puts "FLASH_PT_NOISE corner=$CORNER worst_slack=$noise_worst violators=$noise_viol"
 set wns_setup [get_attribute [get_timing_paths -delay_type max] slack]
 set wns_hold  [get_attribute [get_timing_paths -delay_type min] slack]
-# A path into a latch, such as the Ibex clock-gate latch on GF180, reports slack 0 whenever it borrows, so the WNS
-# above sat at exactly 0.000000 on three GF180 knob points. The worst edge-triggered endpoint shows the margin.
+# A path into a latch, such as the Ibex clock-gate latch, reports slack 0 whenever it borrows, so the WNS above
+# can read exactly 0. The worst edge-triggered endpoint shows the margin.
 set wns_flops ""
 foreach_in_collection p [get_timing_paths -delay_type max -max_paths 500 -slack_lesser_than 1000] {
   if {[get_attribute $p endpoint_is_level_sensitive]} { continue }
@@ -80,8 +80,8 @@ if {$eco} {
   # resized cell in place and reroutes only its nets. hold: sizing, plus delay buffers from ECO_HOLD_BUFFERS in
   # pdk.tcl if it names any; Fusion Compiler places those. drc: max transition and capacitance, by sizing.
   # noise: the glitch violators above, by upsizing the victim's driver, and by buffers from ECO_BUFFERS in
-  # pdk.tcl if it names any, which split a victim net; sizing alone left one SKY130 victim unfixable
-  # (ibex_sky130_v4). Every corner is signed off again afterwards, so a loss elsewhere cannot hide.
+  # pdk.tcl if it names any, which split a victim net that sizing alone cannot fix. Every corner is signed off
+  # again afterwards, so a loss elsewhere cannot hide.
   switch $eco_type {
     setup { fix_eco_timing -type setup -setup_margin 0.10 -methods {size_cell} }
     hold {

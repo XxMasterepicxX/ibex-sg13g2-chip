@@ -5,12 +5,13 @@
 #   2. Fusion Compiler: synthesis and scan, then floorplan through route
 #   3. bond pads, seal ring, metal fill, chip DRC and IHP's pre-check
 #   4. signoff with the derived worst and best wire models
-#   5. margin rounds until timing, noise and electrical rows pass and fast hold reaches +0.09 ns, at most 3
+#   5. margin rounds until timing, noise and electrical rows pass and fast hold reaches +0.09 ns, at most 3.
+#      With MARGIN=hand it stops here instead and lists what to fix; fix it, then run the same command again.
 #   6. the test programs on the gates, the scan test, clock crossings, and voltage drop and EM
 #   7. unsigned review drafts in <run>/review
 # Then: read the drafts, sign them with chip/review/sign.py, run chip/final_signoff.sh, then chip/package/package.sh.
 # Takes most of a day. Run it under nohup; the log is <run>/make_chip.log.
-# usage: make_chip.sh <name>
+# usage: [MARGIN=hand] make_chip.sh <name>
 set -o pipefail
 [ -n "$1" ] || { echo "usage: make_chip.sh <name>"; exit 1; }
 C=$HOME/flash/chip
@@ -22,9 +23,7 @@ log() { echo "$(date +'%F %T') $*"; }
 stop() { log "STOPPED at $1. $2"; exit 1; }
 source /apps/settings > /dev/null 2>&1
 unset PYTHONHOME PYTHONPATH
-export RUN_CFG=$RUN/run_cfg.tcl FLASH_TOOLS=2026 FLOW_DIR=$F
-export RC_CMAX_GRID=$HOME/flash/ihp/rc/w6_spec_sensitivity/rcmax/sg13g2_spec_rcmax.nxtgrd
-export RC_CMIN_GRID=$HOME/flash/ihp/rc/w6_spec_sensitivity/rcmin/sg13g2_spec_rcmin.nxtgrd
+export RUN_CFG=$RUN/run_cfg.tcl FLOW_DIR=$F
 log "START $RUN"
 
 if ! grep -qs "^FLASH_STOPPED_AFTER synth" "$RUN/fc_setup.log"; then
@@ -38,9 +37,8 @@ if ! grep -qs "^FLASH_FLOW_DONE" "$RUN/fc_floorplan.log"; then
 fi
 
 if [ ! -f "$RUN/chip/done" ]; then
-  # A run is judged as a chip once chip/ exists. The checker will not replace the block-level manifest from the
-  # Fusion Compiler run on its own, so it is archived here. A check-only signoff then writes the chip manifest
-  # and records the signoff inputs, which the chip DRC is stamped against.
+  # Archive the block manifest so a check-only signoff writes the chip manifest and records the inputs the chip
+  # DRC is stamped against.
   mkdir -p "$RUN/chip"
   if grep -qs deferred_until_filled_chip "$RUN/signoff/manifest.json"; then
     mv "$RUN/signoff/manifest.json" "$RUN/signoff/manifest.block_scope_fc.json"
@@ -53,10 +51,11 @@ fi
 cat "$RUN/chip/density.txt"
 
 # Rows a margin round can fix, and the fast hold floor.
+MARGIN_ROWS="^(pt_(slow|typ|fast)(_shift)? |noise_|electrical_|timing_constraints_)"
 needs_margin() {
   local K=$RUN/signoff/CHECK.txt
   # pt_report_analysis_coverage_* rows wait for a signed review record, which no margin round can supply.
-  grep -E "^(pt_(slow|typ|fast)(_shift)? |noise_|electrical_|timing_constraints_)" "$K" | grep -qv " PASS " && return 0
+  grep -E "$MARGIN_ROWS" "$K" | grep -qv " PASS " && return 0
   awk '$1 ~ /^pt_fast/ {for (i = 1; i <= NF; i++) if ($i ~ /^hold_wns=/) {split($i, a, "="); if (a[2] < 0.09) bad = 1}} END {exit !bad}' "$K"
 }
 if [ ! -f "$RUN/signoff/full_signoff.done" ]; then
@@ -68,6 +67,11 @@ if [ ! -f "$RUN/signoff/full_signoff.done" ]; then
   touch "$RUN/signoff/full_signoff.done"
 fi
 tail -1 "$RUN/signoff/CHECK.txt"
+if [ "$MARGIN" = hand ] && needs_margin; then
+  grep -E "$MARGIN_ROWS" "$RUN/signoff/CHECK.txt" | grep -v " PASS "
+  grep -h "^FLASH_PT corner" "$RUN"/signoff/pt_fast*/pt.log
+  stop margin "MARGIN=hand: fix the rows above, and fast hold if it is under +0.09 ns, then run this again."
+fi
 for r in 1 2 3; do
   needs_margin || break
   log "margin round $r"

@@ -2,7 +2,7 @@
 # Core 900 x 945: 945 um is 250 rows of 3.78 um, so with a 222 um offset the die edges (1344 x 1389) are
 # whole microns, and pads snapped to whole microns leave gaps that IHP 1 um fillers close.
 set DESIGN     flash_chip
-set RTL_FILES  [list @HOME@/flash/designs/flash_soc/rtl_v2/flash_chip.v @HOME@/flash/designs/flash_soc/rtl_v2/flash_soc.v @HOME@/flash/designs/flash_soc/rtl_v2/ibex_nogate.v @HOME@/flash/designs/flash_soc/rtl_v2/prim_clock_gating_ihp.v]
+set RTL_FILES  [list @HOME@/flash/designs/flash_soc/rtl/flash_chip.v @HOME@/flash/designs/flash_soc/rtl/flash_soc.v @HOME@/flash/designs/flash_soc/rtl/ibex_nogate.v @HOME@/flash/designs/flash_soc/rtl/prim_clock_gating_ihp.v]
 set INC_DIRS   {}
 set DEFINES    {}
 set CLK_PORT   clk

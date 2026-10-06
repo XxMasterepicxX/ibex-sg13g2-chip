@@ -7,12 +7,12 @@ This repository includes work from these projects, each under the Apache License
 
 lowRISC Ibex, https://github.com/lowRISC/ibex, commit e9f55342edbd27e9e17a0e41b1c95a81abb5eac8.
 Copyright lowRISC contributors.
-designs/flash_soc/rtl_v2/ibex_nogate.v is Ibex converted to Verilog with sv2v, with the generic clock gate removed.
+designs/flash_soc/rtl/ibex_nogate.v is Ibex converted to Verilog with sv2v, with the generic clock gate removed.
 
 IHP-Open-PDK, https://github.com/IHP-GmbH/IHP-Open-PDK, commit 5e6d592e4002946a4616f798c357f0f3c06cf3b6.
 Copyright IHP GmbH.
 ihp/rc/sg13g2_typ.itf is IHP's wire model with one duplicate layer name changed. The models in
-ihp/rc/w6_spec_sensitivity are derived from it and from IHP's process specification; see DERIVATION.md there.
+ihp/rc/rcmax and ihp/rc/rcmin are derived from it and from IHP's process specification; see ihp/rc/DERIVATION.md.
 setup/get_pdk.sh downloads the kit and derives a fill macro and an SRAM LEF from it; the kit itself is not
 included here.
 

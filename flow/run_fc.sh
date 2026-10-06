@@ -5,7 +5,7 @@
 {
 RUN=$(readlink -f "$1")
 cd "$RUN" || exit 1
-# A copied run_cfg keeps its source's OUT and would write into that run (gf180_chip_v5, sv_ibex_v2 on 9-23).
+# A copied run_cfg keeps its source's OUT and would write into that run.
 OUT_DIR=$(echo "source {$RUN/run_cfg.tcl}; puts \$OUT" | tclsh)
 [ "$(readlink -f "$OUT_DIR")" = "$RUN" ] || { echo "run_cfg OUT is $OUT_DIR, not $RUN" >&2; exit 1; }
 mkdir -p "$RUN/flow_snapshot"
@@ -19,9 +19,9 @@ fi
 source /apps/settings >/dev/null 2>&1
 unset PYTHONHOME PYTHONPATH
 source $HOME/flash/flow/tools.sh
-if [ -n "$FC_PRELOAD" ]; then export LD_PRELOAD="$FC_PRELOAD"; else unset LD_PRELOAD; fi
+unset LD_PRELOAD
 export SYNOPSYS_LC_ROOT=/apps/syn/lc
-echo "FLASH_TOOLS $(cat $RUN/.tools) $FC_BIN" >&2
+echo "FLASH_TOOLS $FC_BIN" >&2
 export RUN_CFG=$RUN/run_cfg.tcl FLOW_DIR=$RUN/flow_snapshot
 # The in-design IC Validator (ICV_RUNSET) finds its install through ICV_HOME_DIR.
 export ICV_HOME_DIR=$ICV_HOME

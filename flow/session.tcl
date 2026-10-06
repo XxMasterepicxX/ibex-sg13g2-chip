@@ -22,7 +22,7 @@ proc lib_cells_named {names} {
   return [get_lib_cells $pats]
 }
 
-# In-design IC Validator repair, the "ICV in design" Greg described (M3 30:21): FC runs the foundry deck and
+# In-design IC Validator repair: FC runs the foundry deck and
 # reroutes what it flags. Called at the end of routing and as the repair ladder's last rung.
 proc icv_fix_drc {} {
   global ICV_RUNSET GDS_MAP GDS_CELLS EXTRA_GDS OUT
@@ -33,16 +33,14 @@ proc icv_fix_drc {} {
   set_app_options -name signoff.check_drc.user_defined_options -value {-host_init 4}
   set_app_options -name signoff.fix_drc.user_defined_options -value {-host_init 4}
   set_app_options -name signoff.fix_drc.run_dir -value $OUT/icv_fix
-  # Up to three repair loops: on saed_ibex7 one loop left 4 of 627, three left 2.
-  # signoff_fix_drc can fail outright on a heavily congested block (sq4 M5 at 85%: ZRT-049, 1347 FC DRCs), and an
-  # uncaught error ended the whole run. The repair is an improvement step, so a failure is reported and routing
-  # stands as it was; signoff still judges the result.
+  # Up to three repair loops. signoff_fix_drc can fail outright on a heavily congested block. The repair is an
+  # improvement step, so a failure is reported and routing stands as it was; signoff still judges the result.
   if {[catch {signoff_fix_drc -max_number_repair_loop 3} err]} {
     puts "FLASH_ICV_FIX failed: [string range $err 0 200]"
     return -1
   }
   set fh [open $OUT/icv_fix/result_summary.rpt]
-  # With nothing to repair the summary has no TOTAL row (saed_ibex8).
+  # With nothing to repair the summary has no TOTAL row.
   set targeted 0; set remaining 0
   regexp {TOTAL\s*:\s*:\s*:\s*(\d+)\s*:\s*(\d+)} [read $fh] -> targeted remaining
   close $fh
@@ -52,16 +50,15 @@ proc icv_fix_drc {} {
 }
 
 # Hold fixing: by default FC skips any hold violation that needs more than 20 buffers (OPT-209). The IHP SRAM
-# needs 0.33 ns of hold at the fast corner, and fast-corner buffers are short, so its loader inputs were left
-# failing (flash_soc: -0.098 ns in FC, -0.067 ns in PrimeTime). Synopsys documents this override.
+# needs 0.33 ns of hold at the fast corner, and fast-corner buffers are short, so its inputs need more.
+# Synopsys documents this override.
 # A single check can only be changed once the design has a policy (NDMUI-925 "Configuration not set").
 set_early_data_check_policy -policy normal -if_not_exists
 set_early_data_check_policy -policy tolerate -checks opt.sanity_check.large_hold -strategy report_only
 
-# Cells the flow needs that a library locks, optional in pdk.tcl: UNLOCK_CELLS. SAED32 marks its tie cells and
-# antenna diode dont_use and dont_touch. Without tie cells FC wired every constant input straight to the VSS rail
-# (saed_counter3: 65 pins on 33 cells) and add_tie_cells found none (OPT-200); without the diode, Zroute
-# turned diode insertion off (ZRT-302).
+# Cells the flow needs that a library locks, optional in pdk.tcl: UNLOCK_CELLS. Without tie cells FC wires
+# constant inputs straight to the supply rails (OPT-200); without the antenna diode, Zroute turns diode
+# insertion off (ZRT-302).
 if {[info exists UNLOCK_CELLS] && [llength $UNLOCK_CELLS]} {
   set_attribute [lib_cells_named $UNLOCK_CELLS] dont_use false
   set_dont_touch [lib_cells_named $UNLOCK_CELLS] false
@@ -77,14 +74,14 @@ if {[info exists RUN_AVOID_CELLS] && [llength $RUN_AVOID_CELLS]} {
 }
 
 # With no scan chain, FC may still map flops to scan cells and use their scan mux as logic; placement then counts
-# them as stitched and stops for want of a scan DEF (sq6 SKY130 Ibex, PLACE-042). There is no chain to reorder.
+# them as stitched and stops for want of a scan DEF (PLACE-042). There is no chain to reorder.
 if {![info exists SCANDEF] && ![info exists DFT_SETUP]} {
   set_early_data_check_policy -checks place.coarse.missing_scan_def -policy tolerate
 }
 
 # Optimization may merge the nets of two ports into one Verilog assign, and StarRC then names the SPEF port after
-# the net, so the second port loses its parasitics. DC had buffered CVA6's ports, 0 assigns, and FC's optimization
-# put 3,021 back, 200 PARA-006, even with set_fix_multiple_port_nets; this option makes it buffer them instead.
+# the net, so the second port loses its parasitics. set_fix_multiple_port_nets alone does not prevent it; this
+# option makes optimization buffer them instead.
 set_app_options -name opt.port.eliminate_verilog_assign -value true
 
 # Router app options, name and value pairs: ROUTE_OPTIONS in pdk.tcl for what a PDK needs, RUN_ROUTE_OPTIONS in
@@ -118,8 +115,8 @@ if {$ANTENNA_AWARE} {
 }
 
 # IO cells whose bond-pad pin, the pin on a port's net, lies farther from the die edge than the cell's centre:
-# the cell faces the core. FC's place_io assumes a pad library draws its bond pad at the cell's bottom edge;
-# SKY130 draws it at the top, and sky130_chip_v1 was built with every IO cell turned toward the core.
+# the cell faces the core. FC's place_io assumes a pad library draws its bond pad at the cell's bottom edge, and
+# a library that draws it elsewhere ends up with its IO cells turned toward the core.
 proc io_facing_errors {} {
   lassign [get_attribute [current_block] boundary_bbox] dll dur
   lassign $dll x0 y0

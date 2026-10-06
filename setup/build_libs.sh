@@ -1,6 +1,5 @@
 #!/bin/bash
-# Builds the libraries Synopsys tools read, from IHP's open kit, with your own licenses. Nothing here is copied from
-# anyone else's build. Each step skips itself once its output exists.
+# Builds the libraries Synopsys tools read, from IHP's open kit, with your own licenses. Each step skips itself once its output exists.
 #   ihp/db        Liberty to .db for the standard cells and IO cells (Library Compiler)
 #   ihp/sram_db   the same for the 1024x32 SRAM
 #   ihp/ndm       Fusion Compiler reference libraries: standard cells, SRAM and IO cells (Library Manager)
@@ -36,9 +35,9 @@ grd() {
   test -s "$d/$base.nxtgrd" && test -s "$d/$base.tluplus"
 }
 grd "$I/rc" sg13g2_typ.itf &
-grd "$I/rc/w6_spec_sensitivity/rcmax" sg13g2_spec_rcmax.itf &
-grd "$I/rc/w6_spec_sensitivity/rcmin" sg13g2_spec_rcmin.itf &
+grd "$I/rc/rcmax" sg13g2_spec_rcmax.itf &
+grd "$I/rc/rcmin" sg13g2_spec_rcmin.itf &
 wait
-for f in "$I/rc/sg13g2_typ.nxtgrd" "$I/rc/w6_spec_sensitivity/rcmax/sg13g2_spec_rcmax.nxtgrd" \
-         "$I/rc/w6_spec_sensitivity/rcmin/sg13g2_spec_rcmin.nxtgrd"; do test -s "$f"; done
+for f in "$I/rc/sg13g2_typ.nxtgrd" "$I/rc/rcmax/sg13g2_spec_rcmax.nxtgrd" \
+         "$I/rc/rcmin/sg13g2_spec_rcmin.nxtgrd"; do test -s "$f"; done
 echo "RC_OK"

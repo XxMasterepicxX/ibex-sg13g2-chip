@@ -9,7 +9,7 @@ D=$HOME/flash/designs/flash_soc
 CV=$HOME/flash/pdk/IHP-Open-PDK/ihp-sg13g2/libs.ref
 export SIM_CELLS="$CV/sg13g2_stdcell/verilog/sg13g2_stdcell.v $CV/sg13g2_stdcell/verilog/sg13g2_udp.v $CV/sg13g2_io/verilog/sg13g2_io.v"
 export VCS_DEFINES="+define+CHIP ${EXTRA_DEFINES:-}"
-export RTL_SRC="$D/rtl_v2/flash_chip.v $D/rtl_v2/flash_soc.v $D/rtl_v2/ibex_nogate.v $D/rtl_v2/prim_clock_gating_ihp.v"
+export RTL_SRC="$D/rtl/flash_chip.v $D/rtl/flash_soc.v $D/rtl/ibex_nogate.v $D/rtl/prim_clock_gating_ihp.v"
 mkdir -p "$OUT"
 for t in main t_isa t_muldiv t_mem t_work t_muldiv_plant; do
   want=PASS; [ $t = t_muldiv_plant ] && want=FAIL

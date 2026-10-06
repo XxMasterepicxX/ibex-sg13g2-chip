@@ -17,7 +17,7 @@
 RUN=$(readlink -f "$1"); [ -f "$RUN/run_cfg.tcl" ] || { echo "usage: margin_fix.sh <run_folder>"; exit 1; }
 C=$HOME/flash/chip
 F=$HOME/flash/flow
-E=$F/eco_fixed.sh
+E=$F/eco.sh
 n=1; while [ -d "$RUN/margin/round$n" ]; do n=$((n + 1)); done
 H=$RUN/margin/round$n
 mkdir -p "$H" && cd "$H" || exit 1
@@ -25,23 +25,10 @@ log() { echo "$(date +'%F %T') $*"; }
 source /apps/settings > /dev/null 2>&1
 unset PYTHONHOME PYTHONPATH
 export RUN_CFG=$RUN/signoff/executed_cfg.tcl SCRATCH=$H FLOW_DIR=$F
-export RC_CMAX_GRID=$HOME/flash/ihp/rc/w6_spec_sensitivity/rcmax/sg13g2_spec_rcmax.nxtgrd
-export RC_CMIN_GRID=$HOME/flash/ihp/rc/w6_spec_sensitivity/rcmin/sg13g2_spec_rcmin.nxtgrd
 log "START $RUN round $n"
 
 # PrimeTime scripts from this run's own signoff settings: reports go to the scratch folder, and the test is appended.
-python3 - "$RUN/signoff/pt_policy.tcl" pt_base.tcl <<'PY'
-import re, sys
-s = open(sys.argv[1]).read().splitlines(True)
-out = []
-for l in s:
-    if l.startswith('set R $S/pt_'):
-        l = 'set R $env(SCRATCH)/$CORNER$TIMING_MODE\n'
-    elif l.startswith('if {$eco} { set R $S/eco_pt_') or l.startswith('write_sdf ') or l.strip() == 'exit':
-        continue
-    out.append(l)
-open(sys.argv[2], 'w').writelines(out)
-PY
+python3 "$C/margin/make_pt_base.py" "$RUN/signoff/pt_policy.tcl" pt_base.tcl
 cat pt_base.tcl "$C/margin/eval_tail.tcl" > pt_eval.tcl
 cat pt_base.tcl "$C/margin/cap_tail.tcl" > pt_cap.tcl
 

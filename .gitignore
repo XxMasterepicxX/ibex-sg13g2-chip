@@ -12,6 +12,7 @@
 /ihp/**/*.ndm/
 /ihp/**/*.nxtgrd
 /ihp/**/*.tluplus
+/ihp/**/*.TLUPlus/
 /ihp/rc/**/sg13g2/
 /ihp/**/*.log
 /ihp/**/*_output.txt

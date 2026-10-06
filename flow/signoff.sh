@@ -1,7 +1,7 @@
 #!/bin/bash
 # Signoff for one finished Fusion Compiler run: StarRC, PrimeTime SI at every corner, Formality,
 # PrimePower, the PDK's DRC and LVS decks, then the log parser. PDK facts come from pdk_cfg/<PDK>/pdk.sh.
-# usage: signoff.sh <run_dir> [step...]   steps: starrc pt ptshift fm pp lvsnet drc lvs check
+# usage: signoff.sh <run_dir> [step...]   steps: starrc pt ptshift fm pp lvsnet drc lvs chiplvs check
 # Braced so bash parses the whole script before running it: editing this file mid-run cannot corrupt a live signoff.
 {
 RUN=$(readlink -f "$1"); shift
@@ -17,17 +17,17 @@ PDK=$(awk '$2=="PDK"{print $3}' "$RUN_CFG")
 [ -n "$PDK" ] || { echo "run_cfg must set PDK" >&2; exit 1; }
 source $HOME/flash/pdk_cfg/$PDK/pdk.sh
 export PDK_ROOT PDK_WORK PDK_CFG NDM_LIB DB_DIR TLUP NXTGRD RC_MAP TECH_LEF CELL_LEF CELL_CDL ICV_RUNSET
-FLOW=${FLASH_SIGNOFF_FLOW:-$HOME/flash/flow}
+FLOW=$HOME/flash/flow
 # Hard macro views, optional in run_cfg: EXTRA_LEF for StarRC, EXTRA_CDL and EXTRA_LVS_REMAP for LVS.
 cfg() { echo "source {$RUN_CFG}; if {[info exists $1]} { puts [join \$$1 { }] }" | tclsh; }
 EXTRA_LEF=$(cfg EXTRA_LEF); EXTRA_CDL=$(cfg EXTRA_CDL); EXTRA_LVS_REMAP=$(cfg EXTRA_LVS_REMAP)
 LVS_BLACKBOX=$(cfg LVS_BLACKBOX)
 S=$RUN/signoff
 mkdir -p "$S"
-SNAP=$S/w1_flow
+SNAP=$S/flow_snapshot
 mkdir -p "$SNAP"
 cp "$FLOW/check.py" "$SNAP/check.py"
-cp "$HOME/flash/flow/make_pt_policy_private.py" "$SNAP/make_pt_policy.py"
+cp "$FLOW/make_pt_policy.py" "$SNAP/make_pt_policy.py"
 cp "$FLOW/constraints.tcl" "$SNAP/constraints.tcl"
 cp "$FLOW/pt_signoff.tcl" "$SNAP/pt_signoff.tcl"
 cp "$FLOW/pp_power.tcl" "$SNAP/pp_power.tcl"
@@ -59,10 +59,8 @@ if has starrc; then
   SUB=starrc; GRID=$NXTGRD; TEMP=25
   if [ "$rc" != nominal ]; then
     SUB=starrc_$rc
-    GRID="$(dirname "$NXTGRD")/$(basename "$NXTGRD" | sed "s/nominal/C${rc#c}/")"
+    V=RC_${rc^^}_GRID; GRID=${!V}
     [ "$rc" = cmax ] && TEMP=125 || TEMP=-40
-    OVERRIDE=RC_${rc^^}_GRID
-    [ -n "${!OVERRIDE}" ] && GRID=${!OVERRIDE}
   fi
   mkdir -p "$S/$SUB"
   cat > "$S/$SUB/star.cmd" <<EOF
@@ -152,11 +150,12 @@ if has lvsnet; then
   echo "V2CDL_EXIT=$?" >> "$S/lvs/v2cdl.log"
 fi
 
-if has drc; then
+# DRC, LVS and whole-chip LVS read only the finished layouts and netlists and write their own folders, so they
+# run at once. Each is a single KLayout job that uses one core; whole-chip LVS is the longest.
+drc_step() {
   begin drc || exit 1
   rm -rf "$S/drc"
-  # A design with an IO ring is a chip: metal density rules, which a block meets only once the chip is filled,
-  # apply to it directly (Greg Cieslewski, liaison 9-24: density is judged at the end, on the chip).
+  # A design with an IO ring is a chip: its density rules are judged on the filled chip, not here.
   DRC_CHIP=$([ -n "$(cfg IO_RING)" ] && echo 1)
   DRC_CHIP=$DRC_CHIP drc_run "$RUN/out/$DESIGN.gds" "$DESIGN" "$S/drc" < /dev/null > "$S/drc.log" 2>&1
   X=$?; echo "DRC_EXIT=$X" >> "$S/drc.log"
@@ -164,9 +163,9 @@ if has drc; then
   # and writes its result databases; the drc row then judges the markers, chip-only rules on the filled chip.
   [ "$X" = 1 ] && grep -q "Total DRC Run time" "$S/drc.log" && ls "$S"/drc/*.lyrdb > /dev/null 2>&1 && X=0
   stamp drc drc "$X"
-fi
+}
 
-if has lvs; then
+lvs_step() {
   begin lvs || exit 1
   rm -rf "$S/lvs/run" "$S/lvs/extract"
   if [ -n "$LVS_BLACKBOX" ]; then
@@ -184,14 +183,18 @@ if has lvs; then
   fi
   X=$?; echo "LVS_EXIT=$X" >> "$S/lvs.log"
   stamp lvs lvs "$X"
-fi
+}
 
-if has chiplvs && [ -d "$RUN/chip" ]; then
+chiplvs_step() {
   begin chip_lvs || exit 1
   "$FLOW/lvs_chip.sh" "$RUN" "$RUN/chip/chip_filled.gds" "chip_$DESIGN"
   X=$(sed -n 's/^LVS_EXIT=//p' "$S/lvs_chip/lvs.log" | tail -1)
   stamp chip_lvs chip_lvs "${X:-1}"
-fi
+}
+has drc && drc_step &
+has lvs && lvs_step &
+has chiplvs && [ -d "$RUN/chip" ] && chiplvs_step &
+wait
 if has check; then
   python3 "$CHECKER" "$RUN" | tee "$S/CHECK.txt"
   X=${PIPESTATUS[0]}

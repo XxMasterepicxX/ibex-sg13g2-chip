@@ -26,7 +26,7 @@ sed "s/^\.SUBCKT chip_flash_chip\$/.SUBCKT $N/" "$RUN/signoff/lvs_chip/chip.cdl"
 grep -q "^\.SUBCKT $N\$" "$V/netlist/$N.cdl"
 cp "$RUN/out/flash_chip.v" "$V/netlist/flash_chip.v"
 mkdir -p "$M/rtl" "$M/PlaceAndRoute/def" "$M/PlaceAndRoute/timing/sdf" "$M/PlaceAndRoute/parasitics/spef" "$M/testbenches" "$M/verification/sta"
-cp "$D"/rtl_v2/*.v "$M/rtl/"
+cp "$D"/rtl/*.v "$M/rtl/"
 cp "$RUN/out/flash_chip.def" "$M/PlaceAndRoute/def/"
 for c in slow typ fast; do cp "$RUN/signoff/pt_$c/flash_chip.$c.sdf" "$M/PlaceAndRoute/timing/sdf/"; done
 for x in starrc:typ starrc_cmax:cmax starrc_cmin:cmin; do

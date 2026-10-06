@@ -2,10 +2,10 @@
 # to be part of the PDK", libs.tech/librelane/sg13g2_io/config.tcl), so each pad cell gets IHP's own
 # SG13_dev "bondpad" PCell: a 70 um square (librelane's PAD_BONDPAD size) centred on the pad, GAP um outside
 # its outer edge, joined to the pad pin (70 um of every metal, 3 um deep) by a TopMetal2 bridge.
-# Why the gap: overlapping the pad by 3 um stacked the bond pad's TopVia1/TopVia2 arrays on the pad's (chip_v4:
-# 3403 TV1.b, 1964 TV2.b). Abutting it, as librelane places it, left the pad within 11.2 um of the pad cell's
-# Activ, which IHP's tapeout precheck reports (chip_v6: 51 Pad.d1R), and gave every metal a 0 um exit where
-# 7 um is recommended (Pad.fR_*). 12 um clears both.
+# Why the gap: overlapping the pad stacks the bond pad's TopVia1/TopVia2 arrays on the pad's (TV1.b, TV2.b).
+# Abutting it, as librelane places it, puts the bond pad too close to the pad cell's Activ, which IHP's tapeout
+# precheck reports (Pad.d1R), and gives every metal a 0 um exit where 7 um is recommended (Pad.fR_*).
+# 12 um clears both.
 # Run: klayout -n sg13g2 -zz -r add_bondpads.py -rd in_gds=.. -rd top=.. -rd out_gds=..
 import pya
 

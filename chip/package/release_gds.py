@@ -1,5 +1,4 @@
-# Release GDS for the IHP Open-Silicon MPW: the filled chip with its top cell renamed to the generated IP name,
-# saved with the options in Open-Silicon-MPW fig/klayout_save.png.
+# Release GDS for the IHP Open-Silicon MPW: the filled chip with its top cell renamed to the generated IP name.
 # usage: klayout -b -r release_gds.py -rd in_gds=... -rd top=... -rd name=... -rd out_gds=...
 import pya
 layout = pya.Layout()

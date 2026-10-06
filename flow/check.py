@@ -243,7 +243,7 @@ def dependency_files(run):
         if path.is_file():
             files.add(path.resolve())
     for relative in ('check.py', 'make_pt_policy.py', 'constraints.tcl', 'pt_signoff.tcl', 'pp_power.tcl', 'fm_verify.tcl', 'tools.sh'):
-        path = run / 'signoff/w1_flow' / relative
+        path = run / 'signoff/flow_snapshot' / relative
         if path.is_file():
             files.add(path.resolve())
     policy = run / 'signoff/executed_cfg.tcl'
@@ -395,7 +395,7 @@ def launch_inputs(run, name):
             if path:
                 candidate = Path(path).expanduser()
                 result['power_' + env_name] = digest(candidate) if candidate.is_file() else None
-        result['power_activity_policy'] = digest(run / 'signoff/w1_flow/pp_power.tcl') if (run / 'signoff/w1_flow/pp_power.tcl').is_file() else None
+        result['power_activity_policy'] = digest(run / 'signoff/flow_snapshot/pp_power.tcl') if (run / 'signoff/flow_snapshot/pp_power.tcl').is_file() else None
     return result
 
 def cfg_values(run):
@@ -473,8 +473,8 @@ def manifest_for(run):
       'starrc': ['signoff/starrc/starrc.log', 'signoff/starrc/star.cmd', 'signoff/starrc/*.spef'],
       'formality': ['signoff/formality/fm.log', 'signoff/formality/status.rpt', 'signoff/formality/unmatched.rpt', 'signoff/formality/dont_verify.rpt'],
       'primepower': ['signoff/primepower/pp.log'],
-      'drc': ['signoff/drc.log', 'signoff/drc/*.RESULTS' if cfg['PDK'] in {'saed32', 'saed90'} else 'signoff/drc/*.lyrdb'],
-      'lvs': ['signoff/lvs.log', 'signoff/lvs/v2cdl.log'] + (['signoff/lvs/run/*.RESULTS'] if cfg['PDK'] in {'saed32', 'saed90'} else [])}
+      'drc': ['signoff/drc.log', 'signoff/drc/*.lyrdb'],
+      'lvs': ['signoff/lvs.log', 'signoff/lvs/v2cdl.log']}
     if cfg.get('SCANDEF') or cfg.get('DFT_SETUP'):
         required['atpg'] = ['signoff/atpg/' + x for x in ['evidence.json','summary.rpt','drc_rules.rpt','tmax.log','parallel.log','fullserial.log','input.v','input.gds','input.spf']]
     for corner in corners:
@@ -486,11 +486,8 @@ def manifest_for(run):
             rc = 'cmax' if corner == 'slow' else 'cmin'
             required['starrc_' + rc] = [f'signoff/starrc_{rc}/starrc.log', f'signoff/starrc_{rc}/star.cmd', f'signoff/starrc_{rc}/*.spef']
     if (run / 'chip').is_dir():
-        required['chip_drc'] = ['chip/drc.log', 'chip/drc/*.RESULTS' if cfg['PDK'] in {'saed32', 'saed90'} else 'chip/drc/*.lyrdb']
-        if cfg['PDK'] == 'saed32':
-            required['chip_density'] = ['chip/density/*.RESULTS']
-        else:
-            required['chip_precheck'] = ['chip/precheck.log', 'chip/precheck/*.lyrdb']
+        required['chip_drc'] = ['chip/drc.log', 'chip/drc/*.lyrdb']
+        required['chip_precheck'] = ['chip/precheck.log', 'chip/precheck/*.lyrdb']
         required['chip_lvs'] = ['signoff/lvs_chip/lvs.log']
     integration_scope = ({'block_density_fill': 'required_on_filled_chip',
                           'restriction': 'Filled-chip density and fill are mandatory for this chip run.',
@@ -537,18 +534,6 @@ def compatible_atpg_manifest(old, proposed):
     if 'atpg' in corrected.get('required', {}) or 'atpg' not in proposed['required']:
         return False
     corrected['required']['atpg'] = proposed['required']['atpg']
-    return corrected == proposed or compatible_saed90_manifest(corrected, proposed)
-
-def compatible_saed90_manifest(old, proposed):
-    if old.get('pdk') != 'saed90':
-        return False
-    corrected = json.loads(json.dumps(old))
-    req = corrected.get('required', {})
-    for name in ('drc', 'chip_drc'):
-        if name in req:
-            req[name] = [x.replace('*.lyrdb', '*.RESULTS') for x in req[name]]
-    if 'lvs' in req and 'signoff/lvs/run/*.RESULTS' not in req['lvs']:
-        req['lvs'].append('signoff/lvs/run/*.RESULTS')
     return corrected == proposed
 
 def immutable_fc_inputs(run):
@@ -574,8 +559,8 @@ if len(sys.argv) > 1 and sys.argv[1].startswith('--'):
         proposed = manifest_for(run)
         if path.exists() and json.loads(path.read_text()) != proposed:
             old = json.loads(path.read_text())
-            if old.get('version') == 1 or compatible_evidence_manifest(old, proposed) or compatible_saed90_manifest(old, proposed) or compatible_atpg_manifest(old, proposed):
-                backup = path.with_name('manifest.pre_w1i.json')
+            if old.get('version') == 1 or compatible_evidence_manifest(old, proposed) or compatible_atpg_manifest(old, proposed):
+                backup = path.with_name('manifest.before_prepare.json')
                 if not backup.exists():
                     shutil.copy2(path, backup)
                 print('FLASH_MANIFEST_MIGRATED checker schema or backend requirements; prior matrix archived')
@@ -814,7 +799,7 @@ n = last(r"Total number of DRCs\s*=\s*(\d+)", cr)
 add("fc_route_drc", None if n is None else int(n) == 0, f"Total number of DRCs = {n}")
 
 # ZRT-311: Zroute skips antenna analysis on any net touching a port without gate data and still
-# reports 0, which hid clk_i at ratio 250 of 200 from every run until 2026-09-21.
+# reports 0.
 ant = read(f"{run}/rpt/check_antenna.rpt")
 if ant is None:
     add("fc_antenna", None, "no check_antenna.rpt: antenna rules not mapped for this PDK")
@@ -822,7 +807,7 @@ else:
     v = (last(r"Total number of antenna violations\s*=\s*(.+)", ant) or "").strip()
     skipped_nets = set(re.findall(r"Skipping antenna analysis for net (\S+?)\.", ant))
     # The one skip that is sound: a net whose only reason is an IO cell's pad pin, the bond-pad side, where there
-    # is no gate to protect (chip_v6_noise2: rst_n, sclk, scan_en ... on sg13g2_IOPadIn). Each is named.
+    # is no gate to protect. Each is named.
     pad_nets = set(re.findall(r"Skipping antenna analysis for net (\S+?)\. The pin pad on cell \S+", ant, re.I))
     other = {n for n in skipped_nets if n not in pad_nets or
              re.search(rf"net {re.escape(n)}\. (?!The pin pad on cell)", ant, re.I)}
@@ -897,8 +882,8 @@ for c in sorted(corner + ('_shift' if mode == 'shift' else '') for corner in man
         add(f"noise_{c}", None, "missing PT noise analysis")
         continue
     s, h = float(m.group(2)), float(m.group(3))
-    # Without a SPEF, PrimeTime times the design with no wire RC and still prints slack. The SKY130
-    # counter passed that way on 2026-09-21, so every net must carry StarRC parasitics.
+    # Without a SPEF, PrimeTime times the design with no wire RC and still prints slack, so every net must
+    # carry StarRC parasitics.
     # Nets with no driver or no load carry no timing, so only pin-to-pin nets must be annotated.
     # FC's DEF names each unconnected input port's net _dummynetN, which the Verilog lacks, and
     # PrimeTime reports exactly 2 errors per such net; any other error breaks the accounting.
@@ -909,9 +894,8 @@ for c in sorted(corner + ('_shift' if mode == 'shift' else '') for corner in man
     errs = int(last(r"(\d+) error\(s\)", para) or -1)
     nets = int(last(r"Annotated nets\s*:\s*(\d+)", para) or 0)
     missing = sum(int(r) for r in re.findall(r"^\s+- Pin to pin nets\s*\|(?:\s*\d+\s*\|){5}\s*(\d+)\s*\|", para, re.M))
-    # Runs since 9-25 also list those nets by name. A SYNOPSYS_UNCONNECTED net holds one unconnected inout pin,
-    # which reads as driver and load, so it counts as pin to pin with no wire: 51 on the SKY130 chip, all
-    # the gpiov2 pads' analog PAD_A_ESD_0_H, PAD_A_ESD_1_H and PAD_A_NOESD_H.
+    # With -list_not_annotated the log also lists those nets by name. A SYNOPSYS_UNCONNECTED net holds one
+    # unconnected inout pin, which reads as driver and load, so it counts as pin to pin with no wire.
     listed = re.findall(r"^\s*\d+\.\s+(\S+) \(driver", para, re.M)
     unconnected = sum(n.startswith("SYNOPSYS_UNCONNECTED") for n in listed)
     if "-list_not_annotated" in para:
@@ -929,7 +913,7 @@ for c in sorted(corner + ('_shift' if mode == 'shift' else '') for corner in man
     origin_spef = Path(origin) / spef_path.relative_to(run)
     launch = f"FLASH_PT_LAUNCH script={origin}/signoff/pt_policy.tcl spef={origin_spef} netlist={origin}/out/{design_name}.v"
     add(f"analysis_launch_{c}", launch in (pt or ''), 'executed PT script and exact SPEF are recorded' if launch in (pt or '') else 'missing PT launch binding')
-    # Crosstalk glitch check, in runs signed off since it was added.
+    # Crosstalk glitch check.
     nm = re.search(r"FLASH_PT_NOISE corner=\S+ worst_slack=(\S+) violators=(\d+)", pt or "")
     noise_report = read(f"{run}/signoff/pt_{c}/noise_violators.rpt") or ""
     noise_ok = bool(nm) and complete_tool_report(noise_report, 'noise') and int(nm.group(2)) == 0
@@ -996,10 +980,10 @@ else:
     dtxt = f" chip_level={','.join(sorted(deferred))}, judged on the filled chip" if deferred else ""
     add("drc", total == 0, f"klayout violations={total} {top} recommended_only={rec}{dtxt}")
 
-# The filled chip, from pdk_cfg/<pdk>/chip_fill.sh: seal ring, fill, full DRC and the foundry's tapeout precheck.
+# The filled chip, from flow/finish.sh: seal ring, fill, full DRC and the foundry's tapeout precheck.
 if os.path.exists(f"{run}/chip/done") and glob.glob(f"{run}/chip/drc/*.RESULTS"):
-    # IC Validator fill step, pdk_cfg/saed32/chip_fill.sh. Rules judged "across chip" only mean something on a
-    # real chip, one with a pad ring; on a block they are reported and deferred, as the chip-only rules are.
+    # IC Validator results. Rules judged "across chip" only mean something on a real chip, one with a pad ring;
+    # on a block they are reported and deferred, as the chip-only rules are.
     is_chip = re.search(r"(?m)^\s*set\s+IO_RING\s+\{\s*\S", read(f"{run}/run_cfg.tcl") or "") is not None
     for name, sub in (("chip_density", "density"), ("chip_drc", "drc")):
         res = read((glob.glob(f"{run}/chip/{sub}/*.RESULTS") or [""])[0]) if glob.glob(f"{run}/chip/{sub}/*.RESULTS") else None
@@ -1050,11 +1034,7 @@ if not mp.is_file():
 else:
     manifest = json.loads(mp.read_text())
     proposed = manifest_for(rp)
-    if compatible_saed90_manifest(manifest, proposed) and manifest != proposed:
-        rows.append(('manifest', 'UNRECORDED', 'older SAED90 backend selector; rerun wrapper migrates archived manifest'))
-        manifest = proposed
-    else:
-        add('manifest', manifest == proposed, 'fixed expected corners=' + ','.join(manifest['corners']) + ' modes=' + ','.join(manifest['modes']))
+    add('manifest', manifest == proposed, 'fixed expected corners=' + ','.join(manifest['corners']) + ' modes=' + ','.join(manifest['modes']))
     scope = manifest.get('integration_scope', {})
     scope_ok = (scope.get('reviewed') is True and bool(scope.get('restriction')) and
                 scope.get('block_density_fill') in {'deferred_until_filled_chip', 'required_on_filled_chip'})
@@ -1094,9 +1074,6 @@ else:
             expected_inputs = check_inputs(rp, manifest['design'], name)
             recorded_inputs = relevant_recorded_inputs(prov.get('inputs', {}), expected_inputs)
             recorded_evidence = prov.get('evidence', {})
-            if manifest['pdk'] == 'saed90':
-                obsolete = {'signoff/drc/*.lyrdb', 'chip/drc/*.lyrdb'}
-                recorded_evidence = {k:v for k,v in recorded_evidence.items() if not (k in obsolete and v is None)}
             changed_inputs = [k for k,v in recorded_inputs.items() if k not in expected_inputs or expected_inputs[k] != v]
             changed_evidence = [k for k,v in recorded_evidence.items() if k not in ev or ev[k] != v]
             missing_inputs = sorted(set(expected_inputs) - set(recorded_inputs))
@@ -1178,7 +1155,7 @@ else:
     import math
     design_name = cfg_values(Path(run))['DESIGN']
     origin = recorded_origin(run, 'primepower')
-    pp_launch = f'FLASH_PP_LAUNCH script={origin}/signoff/w1_flow/pp_power.tcl spef={origin}/signoff/starrc/{design_name}.spef netlist={origin}/out/{design_name}.v'
+    pp_launch = f'FLASH_PP_LAUNCH script={origin}/signoff/flow_snapshot/pp_power.tcl spef={origin}/signoff/starrc/{design_name}.spef netlist={origin}/out/{design_name}.v'
     add('primepower_launch', pp_launch in pp, 'executed PP script and exact SPEF are recorded' if pp_launch in pp else 'missing PP launch binding')
     add('primepower_completion', value is not None and math.isfinite(float(value)) and float(value) >= 0 and last(r'PP_EXIT=(\d+)', pp) == '0' and not re.search(r'^Error:', pp, re.M), 'finite nonnegative power and successful tool exit required')
     fm = read(f'{run}/signoff/formality/fm.log') or ''
@@ -1186,7 +1163,7 @@ else:
     unfinished = sum(int(n) for n in re.findall(r'(\d+) (?:Failing|Aborted|Unverified) compare points', stat))
     add('formality_completion', last(r'FM_EXIT=(\d+)', fm) == '0' and last(r'Verification (SUCCEEDED|FAILED)', fm) == 'SUCCEEDED' and unfinished == 0, f'unfinished={unfinished}; latest verdict and successful exit required')
     origin = recorded_origin(run, 'formality')
-    fm_launch = f'FLASH_FM_LAUNCH script={origin}/signoff/w1_flow/fm_verify.tcl netlist={origin}/out/{design_name}.v'
+    fm_launch = f'FLASH_FM_LAUNCH script={origin}/signoff/flow_snapshot/fm_verify.tcl netlist={origin}/out/{design_name}.v'
     add('formality_launch', fm_launch in fm, 'executed FM script and netlist are recorded' if fm_launch in fm else 'missing FM launch binding')
     coverage_file = rp / 'signoff/formality_coverage.json'
     coverage = json.loads(coverage_file.read_text()) if coverage_file.is_file() else {}
@@ -1195,8 +1172,7 @@ else:
     clock_gate = int(last(r'^\s*Clock-gate LAT\s+.*?\s+(\d+)\s*$',stat,re.M) or 0)
     unmatched = read(f'{run}/signoff/formality/unmatched.rpt') or ''
     dont = read(f'{run}/signoff/formality/dont_verify.rpt') or ''
-    # report_dont_verify_points prefixes each point with its type, such as (Port); without that prefix in the pattern
-    # no excluded point was read, so the review could not name them.
+    # report_dont_verify_points prefixes each point with its type, such as (Port).
     excluded_names = set(re.findall(r'^[ \t]*(?:\(\w+\)[ \t]+)?([ri]:/\S+)',dont,re.M))
     excluded_names = {x.strip() for x in excluded_names}
     waived = {x['point'] for x in coverage.get('excluded',[]) if x.get('reason')}
@@ -1208,7 +1184,7 @@ else:
         unmatched_clean = int(summary.group(2)) == 0 and int(summary.group(1)) == int(summary.group(3)) == len(actual_unmatched) and all(side == 'Impl' and kind == 'LATCG' for side,kind,point in actual_unmatched) and {point for side,kind,point in actual_unmatched} == allowed_gates
     coverage_ok = bool(coverage.get('reviewed_by') and coverage.get('reviewed_on')) and passed > 0 and passed == coverage.get('expected_passing') and excluded == coverage.get('expected_excluded') and clock_gate == coverage.get('expected_clock_gate_latches') and excluded_names == waived and unmatched_clean
     add('formality_coverage', coverage_ok, f'passing={passed} excluded={excluded} clock_gate_latches={clock_gate}; requires reviewed exact exclusions, expected counts and no unmatched points')
-    for name, location in [('drc', 'signoff/drc'), ('chip_drc','chip/drc'), ('chip_density','chip/density')]:
+    for name, location in [('drc', 'signoff/drc'), ('chip_drc','chip/drc')]:
         if name not in manifest['required']:
             continue
         results = glob.glob(f'{run}/{location}/*.RESULTS')

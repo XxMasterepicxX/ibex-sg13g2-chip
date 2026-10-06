@@ -15,7 +15,7 @@
 #   - FLOW_DIR picks the flow scripts, ~/flash/flow by default.
 #   - AFTER_FC is a command run in the run folder between Fusion Compiler and signoff, such as chip finishing,
 #     so signoff checks a finished chip built from the new layout. chip/ is saved and restored with the run.
-# usage: [FLOW_DIR=dir] [TRY_ONLY=1] [MANUAL_CHANGES=file] [FC_CHANGES=file] [AFTER_FC=cmd] eco_fixed.sh <run_dir> <corner> <setup|hold|drc|noise|manual|fc>
+# usage: [FLOW_DIR=dir] [TRY_ONLY=1] [MANUAL_CHANGES=file] [FC_CHANGES=file] [AFTER_FC=cmd] eco.sh <run_dir> <corner> <setup|hold|drc|noise|manual|fc>
 # Braced so bash parses the whole script before running it.
 {
 RUN=$(readlink -f "$1"); C=${2:-slow}; T=${3:-setup}
@@ -23,7 +23,7 @@ FLOW_DIR=${FLOW_DIR:-$HOME/flash/flow}
 [ -f "$RUN/signoff/pt_policy.tcl" ] || { echo "FLASH_ECO_FAILED run signoff.sh first: no signoff/pt_policy.tcl"; exit 1; }
 [ -f "$RUN/signoff/CHECK.txt" ] || { echo "FLASH_ECO_FAILED run signoff.sh first: no signoff/CHECK.txt"; exit 1; }
 if [ "$T" = manual ]; then
-  [ -s "$MANUAL_CHANGES" ] || { echo "FLASH_ECO_FAILED type manual needs MANUAL_CHANGES, a file of size_cell lines"; exit 1; }
+  [ -s "$MANUAL_CHANGES" ] || { echo "FLASH_ECO_FAILED type manual needs MANUAL_CHANGES, a PrimeTime fix script"; exit 1; }
   export MANUAL_CHANGES=$(readlink -f "$MANUAL_CHANGES")
 fi
 if [ "$T" = fc ]; then
@@ -43,7 +43,7 @@ import re, sys
 s = open(sys.argv[1]).read()
 m = re.search(r'\n    drc \{.*?\n(?=    noise \{)', s, re.S)
 if not m:
-    sys.exit("FLASH_ECO_FAILED signoff/pt_policy.tcl has no drc branch before the noise branch; update eco_fixed.sh")
+    sys.exit("FLASH_ECO_FAILED signoff/pt_policy.tcl has no drc branch before the noise branch; update eco.sh")
 open(sys.argv[2], "w").write(s[:m.start()] + "\n" + open(sys.argv[3]).read() + s[m.end():])
 PY
 [ -s "$D/pt_eco.tcl" ] || exit 1

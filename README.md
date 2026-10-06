@@ -14,10 +14,13 @@ parasitics, the RTL, the test programs and the signoff report.
 - Licenses for Fusion Compiler, Library Compiler, Library Manager, StarRC, PrimeTime SI, Formality, PrimePower,
   TestMAX, VCS and SpyGlass. Ansys RedHawk-SC is needed only for the voltage drop check.
 - `git`, `curl`, `unzip`, `rpm2cpio`, `cpio`, `make`, `g++` and `/usr/bin/python3.11`.
+- glibc 2.34 in `/apps/glibc234` for sv2v, and a RISC-V GCC in `/apps/riscv-toolchain` only to rebuild the test
+  programs, which are already built in the repository.
 - About 5 GB of disk in your home folder: 3 GB for setup and about 2 GB per chip build.
 
 The scripts were written for the tool releases and paths of one such server. Tool paths are in `flow/tools.sh`,
-`chip/ir/run.py` and `chip/atpg.sh`.
+`flow/run_fc.sh`, `chip/atpg.sh`, `chip/ir/ir.sh`, `chip/ir/run.py`, `tools/bin/sv2v` and
+`designs/flash_soc/sw_suite/build_all.sh`.
 
 ## Set up, once
 
@@ -42,8 +45,13 @@ nohup bash ~/flash/chip/make_chip.sh my_chip > /dev/null 2>&1 &
 This makes the run folder `~/flash/runs/my_chip` and runs every step up to the review: synthesis and scan
 insertion, place and route, bond pads, seal ring and metal fill, signoff, margin rounds, the test programs on the
 gates, the scan test, the clock crossing check, and the voltage drop and electromigration check. Each step must
-pass before the next starts. Follow `~/flash/runs/my_chip/make_chip.log`; it names the step that stopped it.
-For the voltage drop check, set `ANSYSLMD_LICENSE_FILE` to your Ansys license server first.
+pass before the next starts, except the clock crossing and voltage drop checks, which only report; read
+`cdc.log` and `ir.log` in the run folder. Follow `~/flash/runs/my_chip/make_chip.log`; it names the step that
+stopped it.
+To fix the timing margin by hand instead of with the automatic rounds, put `MARGIN=hand` in front of the command;
+Stage 7.2 of `docs/ibex-flow.pdf` walks it.
+For the voltage drop check, set the Ansys license first. On the ECE servers it is port 1055 on the Synopsys
+license server: `source /apps/settings; export ANSYSLMD_LICENSE_FILE=1055@${SNPSLMD_LICENSE_FILE#*@}`.
 
 When the log ends with `READY_FOR_REVIEW`, a person reviews four records that a tool cannot judge:
 
@@ -60,10 +68,8 @@ with `SIGNOFF CLEAN`, and `package.sh` with `PACKAGE_OK`. The package is in `$R/
 
 ## Documents
 
-- `docs/ibex-flow.pdf` walks every step above with the command, the check that must pass and a screenshot
-  from a fresh build of this repository.
-- `docs/ibex-tutorial.pdf` is the longer tutorial. It explains the ideas behind each step, using a worked
-  block example and the same chip.
+`docs/ibex-flow.pdf` walks every step above with the command, the check that must pass and a screenshot
+from a fresh build of this repository.
 
 ## What is where
 

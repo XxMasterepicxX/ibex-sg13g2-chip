@@ -6,7 +6,7 @@
 # usage: cdc.sh <run_folder>       results in <run_folder>/cdc
 RUN=$(readlink -f "$1"); [ -f "$RUN/run_cfg.tcl" ] || { echo "usage: cdc.sh <run_folder>"; exit 1; }
 O=$RUN/cdc
-D=$HOME/flash/designs/flash_soc/rtl_v2
+D=$HOME/flash/designs/flash_soc/rtl
 L=$HOME/flash/pdk/IHP-Open-PDK/ihp-sg13g2/libs.ref
 rm -rf "$O"; mkdir -p "$O" && cd "$O" || exit 1
 source /apps/settings > /dev/null 2>&1

@@ -5,7 +5,7 @@ Pin order for each cell comes from the library cell CDL, so a missing or extra
 connection is an error, not a silent guess.
 usage: v2cdl.py <netlist.pg.v> <cells.cdl> <top> <out.cdl> [PIN=NET ...]
 PIN=NET puts every cell pin named PIN on net NET, for decks that extract a body/substrate as its
-own node (gf180mcu: --lvs_sub VPW) instead of merging it through the tie cells.
+own node instead of merging it through the tie cells.
 Macro CDL pin names are matched to Verilog pins as A_ADDR<7> -> A_ADDR[7] and VDD! -> VDD (IHP SRAM style).
 Hierarchical netlists, such as Design Compiler's, are flattened here: instances get their hierarchical
 path as a name, and assign statements merge nets. A flat netlist comes out exactly as before.
@@ -16,7 +16,7 @@ import sys
 
 def read_subckt_pins(cdl_path):
     """{cell: pins}, and the .GLOBAL net names."""
-    # A continuation line may start with spaces before its +, as in the SAED32 SRAM CDL.
+    # A continuation line may start with spaces before its +.
     pins, globs, lines = {}, set(), re.sub(r"\n[ \t]*\+", " ", open(cdl_path).read()).splitlines()
     for line in lines:
         m = re.match(r"\s*\.subckt\s+(\S+)\s+(.*)", line, re.I)
@@ -111,19 +111,19 @@ class Nets:
 
 def main(vpath, cdl_path, top, out_path, *remaps):
     # Remaps: PIN=NET ties a CDL pin to a fixed net. CELL.PIN=CDLPIN is a netlist pin the CDL folds into another
-    # pin: SAED32's supply pads have a bond-pad pin, VSSPAD, that is the same node as VSS inside the pad. -CELL
-    # leaves out a cell with no devices and no CDL, such as SAED32's metal-only IO FILLER.
+    # pin, such as a supply pad's bond-pad pin that is the same node as its supply inside the pad. -CELL
+    # leaves out a cell with no devices and no CDL, such as a metal-only IO filler.
     drop = {r[1:] for r in remaps if r.startswith("-")}
-    # ~NET! makes a global net local to each cell. SAED32's SRAM CDL declares internal nodes prin0! to prin7!
-    # global, which joins them across all eight SRAMs; in the layout each SRAM has its own.
+    # ~NET! makes a global net local to each cell, for a CDL that declares a cell's internal nodes global, which
+    # joins them across every instance; in the layout each instance has its own.
     local = {r[1:] for r in remaps if r.startswith("~")}
     # +CELL writes the cell's devices straight into the top level. Where extraction pulls a small cell's devices up
-    # into its parent, as GF180's antenna diodes join the net they protect, the schematic must match that.
+    # into its parent, the schematic must match that.
     inline = {r[1:] for r in remaps if r.startswith("+")}
     alias = {tuple(k.split(".", 1)): v for k, v in (r.split("=", 1) for r in remaps if "=" in r and "." in r.split("=", 1)[0])}
     remap = dict(r.split("=", 1) for r in remaps if "=" in r and "." not in r.split("=", 1)[0])
-    # A cell powered through .GLOBAL nets, as SAED32's SRAM is through VDD and VSS, has no pins for them; the
-    # netlist's pins of those names join the global nets.
+    # A cell powered through .GLOBAL nets has no pins for them; the netlist's pins of those names join the
+    # global nets.
     cell_pins, globs = read_subckt_pins(cdl_path)
     cell_folded = {c.lower(): c for c in cell_pins}
     text = strip_comments(open(vpath).read())
@@ -161,8 +161,8 @@ def main(vpath, cdl_path, top, out_path, *remaps):
                 if len(bits) == 1 and not n.strip().startswith("{"):
                     pinmap[p] = bits[0]
                 elif p in port_ranges:
-                    # Verilog connects by position, left to right along the port's declared range. CVA6's
-                    # hpdcache_core_arbiter declares core_req_abort_i[0:4]; mapping it as [4:0] shorted two nets in LVS.
+                    # Verilog connects by position, left to right along the port's declared range, which may
+                    # ascend, as in [0:4].
                     left, right = port_ranges[p]
                     step = -1 if left >= right else 1
                     idx = list(range(left, right + step, step))
@@ -174,8 +174,7 @@ def main(vpath, cdl_path, top, out_path, *remaps):
         except ValueError as e:
             errors.append(f"{where} ({cell}): {e}")
             return None
-        # SPICE pin names are case-insensitive: the SAED32 PLL's CDL has avdd and ref_clk for the netlist's AVDD
-        # and REF_CLK. An exact match wins.
+        # SPICE pin names are case-insensitive, so a CDL pin matches a netlist pin of any case. An exact match wins.
         exact = {cdl_key(q) for q in pins}
         folded = {k.lower(): k for k in exact}
         pinmap = {p if p in exact else folded.get(p.lower(), p): n for p, n in pinmap.items()}
@@ -189,7 +188,7 @@ def main(vpath, cdl_path, top, out_path, *remaps):
             if bus in pinmap and f"{bus}[{msb}]" not in pinmap:
                 net = pinmap.pop(bus)
                 if msb == 0 and net not in ranges:
-                    # A one-bit bus port on a single-bit net: CVA6's tc_sram req_i[0:0] on req_i[0].
+                    # A one-bit bus port on a single-bit net, such as req_i[0:0] on req_i[0].
                     pinmap[f"{bus}[0]"] = net
                     continue
                 if ranges.get(net) != (msb, 0):
@@ -217,7 +216,7 @@ def main(vpath, cdl_path, top, out_path, *remaps):
                 nets.union(glob(a), glob(b))
         for m in inst_re.finditer(body):
             cell, inst, conns = m.group(1), ident(m.group(2)), m.group(3)
-            # Subcircuit names are case-insensitive too: the netlist's PLL is the CDL's pll.
+            # Subcircuit names are case-insensitive too.
             if cell not in cell_pins and cell not in module_ports:
                 cell = cell_folded.get(cell.lower(), cell)
             path = prefix + inst
@@ -264,9 +263,9 @@ def main(vpath, cdl_path, top, out_path, *remaps):
     flatten(top, "", {p: p for p in ports})
 
     # SPICE names are case-insensitive. Design Compiler's N42 and n42 in one module are two nets, and LVS
-    # read them as one (chip_v2: 2 nets and 3 cells unmatched). A name that differs from an earlier one only
-    # by case gets a suffix; ports keep theirs. A '*' or '$' starts a SPICE comment, so FC's tie net *Logic1*1
-    # cut its cell call short (gf180_chip_v4: "No circuit name given"); those characters become '_'.
+    # would read them as one. A name that differs from an earlier one only by case gets a suffix; ports keep
+    # theirs. A '*' or '$' starts a SPICE comment, so FC's tie net *Logic1*1 would cut its cell call short;
+    # those characters become '_'.
     def uncase(names, fixed):
         seen, new = {n.lower(): n for n in fixed}, {n: n for n in fixed}
         for n in names:
@@ -294,9 +293,8 @@ def main(vpath, cdl_path, top, out_path, *remaps):
         for g in local:
             cells = re.sub(r"(?im)^(\s*\.global\b.*)$", lambda m: " ".join(t for t in m.group(1).split() if t != g), cells)
             cells = re.sub(r"(?<![\w!])" + re.escape(g) + r"(?![\w!])", g.rstrip("!") + "_local", cells)
-        # An inlined cell's devices are written into the top below, so its definition goes: left in, unused, it was
-        # a schematic-only circuit and LVS failed on it.
-        # A dropped cell loses its definition too: unused, it was a schematic-only circuit and LVS failed on it.
+        # Dropped and inlined cells lose their definitions, since an unused one is a schematic-only circuit that
+        # fails LVS. An inlined cell's devices are written into the top below.
         for c in drop:
             cells = re.sub(r"(?ims)^\.subckt\s+" + re.escape(c) + r"\s[^\n]*\n.*?^\.ends[^\n]*\n?", "", cells)
         inline_body = {}

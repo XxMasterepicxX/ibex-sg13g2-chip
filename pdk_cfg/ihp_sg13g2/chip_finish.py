@@ -5,7 +5,6 @@ import math
 import pya
 
 margin = float(globals().get("margin", "30"))
-# -rd tech=sg13cmos5l for SG13CMOS5L, whose SG13_dev library draws its own seal ring layers.
 tech = globals().get("tech", "sg13g2")
 ly = pya.Layout()
 ly.technology_name = tech  # SG13_dev is registered for this technology only

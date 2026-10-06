@@ -5,9 +5,8 @@ set changes [open $env(CHANGE_LIST)]; set text [read $changes]; close $changes
 set changed {}
 foreach {all name} [regexp -all -inline {new_cell_names \{([^\}]+)\}} $text] { lappend changed $name }
 foreach {all name} [regexp -all -inline {(?n)^size_cell \{([^\}]+)\}} $text] { lappend changed $name }
-# A new net has no extracted parasitics. With a wire load model PrimeTime gave the net of a buffer inserted on an
-# SRAM pin 0.14 pF, more than twice the routed original; Fusion Compiler places such a buffer at the pin. New nets
-# count pin loads only here, and the final signoff extracts the real wires.
+# A new net has no extracted parasitics, and a wire load model overestimates the net of a buffer that Fusion
+# Compiler places right at its pin. New nets count pin loads only here, and the final signoff extracts the real wires.
 catch {set_app_var auto_wire_load_selection false}
 catch {remove_wire_load_model [current_design]}
 source $env(CHANGE_LIST)

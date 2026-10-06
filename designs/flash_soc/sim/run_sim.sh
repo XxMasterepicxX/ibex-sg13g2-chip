@@ -15,7 +15,7 @@ cp "$HEX" prog.hex
 MEMS=${SIM_MEMS:-"$SRAM/RM_IHPSG13_1P_1024x32_c2_bm_bist.v $SRAM/RM_IHPSG13_1P_core_behavioral_bm_bist.v"}
 if [ "$MODE" = rtl ]; then
     # RTL_SRC overrides the source list.
-  SRC=${RTL_SRC:-"$D/flash_soc/rtl_v2/flash_chip.v $D/flash_soc/rtl_v2/flash_soc.v $D/flash_soc/rtl_v2/ibex_nogate.v $D/flash_soc/rtl_v2/prim_clock_gating_ihp.v"}
+  SRC=${RTL_SRC:-"$D/flash_soc/rtl/flash_chip.v $D/flash_soc/rtl/flash_soc.v $D/flash_soc/rtl/ibex_nogate.v $D/flash_soc/rtl/prim_clock_gating_ihp.v"}
   OPTS="+notimingcheck +nospecify $CELLS ${VCS_DEFINES:-}"
 else
   SRC="$NET $CELLS"
