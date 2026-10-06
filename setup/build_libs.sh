@@ -29,9 +29,10 @@ grd() {
   local d=$1 itf=$2 base=${2%.itf}
   [ -f "$d/$base.nxtgrd" ] && [ -f "$d/$base.tluplus" ] && return 0
   local tech=$(awk '$1 == "TECHNOLOGY" {print $3}' "$d/$itf")
-  # grdgenxo's exit code is not reliable, so each step is judged by the file it writes.
-  (cd "$d" && { [ -s "$base.tluplus" ] || grdgenxo -itf2TLUPlus -i "$itf" -o "$base.tluplus" > tluplus.log 2>&1; }
-     grdgenxo "$itf" > nxtgrd.log 2>&1; [ -s "$tech.nxtgrd" ] && mv "$tech.nxtgrd" "$base.nxtgrd")
+  # grdgenxo's exit code is not reliable, so each step is judged by the file it writes; under set -e its exit
+  # code must not end the step.
+  (cd "$d" && { [ -s "$base.tluplus" ] || grdgenxo -itf2TLUPlus -i "$itf" -o "$base.tluplus" > tluplus.log 2>&1 || true; }
+     grdgenxo "$itf" > nxtgrd.log 2>&1 || true; if [ -s "$tech.nxtgrd" ]; then mv "$tech.nxtgrd" "$base.nxtgrd"; fi)
   test -s "$d/$base.nxtgrd" && test -s "$d/$base.tluplus"
 }
 grd "$I/rc" sg13g2_typ.itf &

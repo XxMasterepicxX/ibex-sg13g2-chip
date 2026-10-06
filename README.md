@@ -48,8 +48,13 @@ gates, the scan test, the clock crossing check, and the voltage drop and electro
 pass before the next starts, except the clock crossing and voltage drop checks, which only report; read
 `cdc.log` and `ir.log` in the run folder. Follow `~/flash/runs/my_chip/make_chip.log`; it names the step that
 stopped it.
-To fix the timing margin by hand instead of with the automatic rounds, put `MARGIN=hand` in front of the command;
-Stage 7.2 of `docs/ibex-flow.pdf` walks it.
+
+To learn the flow, run it one stage at a time: put `STOP_AT=synth`, then `route`, `finish`, `signoff` and
+`proofs`, in front of the same command. Between stages, `chip/open_fc.sh <run> <step>` opens a saved step in Fusion Compiler and
+`chip/open_klayout.sh <run>` opens the finished chip in KLayout. To fix the timing margin by hand instead of with
+the automatic rounds, put `MARGIN=hand` in front; Stage 7.2 of `docs/ibex-flow.pdf` walks it, and its last section
+has labs that change one setting at a time.
+
 For the voltage drop check, set the Ansys license first. On the ECE servers it is port 1055 on the Synopsys
 license server: `source /apps/settings; export ANSYSLMD_LICENSE_FILE=1055@${SNPSLMD_LICENSE_FILE#*@}`.
 

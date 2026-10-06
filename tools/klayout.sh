@@ -6,7 +6,7 @@ SR=$HOME/flash/tools/sysroot
 export LD_LIBRARY_PATH=$K:$SR/usr/lib64
 export RUBYLIB=$SR/usr/share/ruby:$SR/usr/lib64/ruby:$SR/usr/share/gems/gems/json-2.6.1/lib:$SR/usr/lib64/gems/ruby/json-2.6.1
 export RUBYOPT=--disable-gems
-export QT_QPA_PLATFORM=offscreen
+[ -n "$KLAYOUT_GUI" ] || export QT_QPA_PLATFORM=offscreen
 # tkinter (used by IHP PyCell API for a Tcl interpreter) and psutil come from the sysroot and the venv.
 export KLAYOUT_PYTHONPATH=${KLAYOUT_PYTHONPATH:+$KLAYOUT_PYTHONPATH:}$HOME/flash/tools/pyenv/lib/python3.11/site-packages:$SR/usr/lib64/python3.11:$SR/usr/lib64/python3.11/lib-dynload
 exec $K/klayout "$@"
