@@ -11,7 +11,7 @@
 #   7. unsigned review drafts in <run>/review
 # Then: read the drafts, sign them with chip/review/sign.py, run chip/final_signoff.sh, then chip/package/package.sh.
 # Takes most of a day. Run it under nohup; the log is <run>/make_chip.log.
-# STOP_AT=synth|route|finish|signoff|proofs stops after that stage, so you can look at its results; run the same
+# STOP_AT=synth|route|finish|signoff stops after that stage, so you can look at its results; run the same
 # command again, with the next STOP_AT or none, to go on. Each stage logs the command it runs.
 # usage: [MARGIN=hand] [STOP_AT=stage] make_chip.sh <name>
 set -o pipefail
@@ -70,6 +70,11 @@ if [ ! -f "$RUN/signoff/full_signoff.done" ]; then
   "$F/signoff.sh" "$RUN"
   # signoff.sh exits non-zero while review records are missing, so success means it reached its check step.
   grep -qs SIGNOFF_CHECK_EXIT "$RUN/signoff/signoff.done" || stop signoff "See $RUN/signoff"
+  # Rows that only say a tool finished. If one fails, the next run of this command repeats signoff.
+  for c in starrc starrc_cmax starrc_cmin pt_exit_slow pt_exit_typ pt_exit_fast pt_exit_slow_shift pt_exit_typ_shift \
+      pt_exit_fast_shift formality_completion primepower_completion drc lvs_completion chip_lvs_completion; do
+    grep -q "^$c .* PASS " "$RUN/signoff/CHECK.txt" || stop signoff "The $c row does not pass. See $RUN/signoff/CHECK.txt"
+  done
   touch "$RUN/signoff/full_signoff.done"
 fi
 tail -1 "$RUN/signoff/CHECK.txt"
@@ -104,7 +109,6 @@ wait $G; wait $A
 tail -qn1 "$RUN/gls.log" "$RUN/atpg.log" "$RUN/cdc.log" "$RUN/ir.log"
 grep -q GLS_PASS "$RUN/gls.log" || stop "gate-level programs" "See $RUN/gls.log"
 grep -q ATPG_DONE "$RUN/atpg.log" || stop "scan test" "See $RUN/atpg.log"
-at proofs "Look at $RUN/gls, $RUN/signoff/atpg, $RUN/cdc and $RUN/ir."
 
 log "review drafts"
 python3 "$C/review/make_drafts.py" "$RUN" || stop "review drafts" ""

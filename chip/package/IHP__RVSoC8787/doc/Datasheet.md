@@ -74,9 +74,10 @@ All in `RVSoC8787-main/testbenches`. Each one checks its own results and reports
 | t_work | A prime sieve, a sort and a Fibonacci table folded into checksums |
 | t_muldiv_plant | Control: built to fail. It must report fail, which shows that a failing program is caught |
 
-## Signoff results
+## Signoff results of the reference build
 
-From the reference build on 2026-10-03. Fusion Compiler built it for an 18 ns clock; it is signed off at 20 ns. Timing uses worst and best wire models we derived from the
+From the reference build on 2026-10-03. A package built from another run carries that run's own checks in
+`RVSoC8787-main/verification/sta/CHECK.txt`; read the results there. Fusion Compiler built it for an 18 ns clock; it is signed off at 20 ns. Timing uses worst and best wire models we derived from the
 sheet and via resistance ranges in IHP's process spec, with thicknesses kept typical, since IHP publishes only a typical model, with a 5% cell and wire delay derate.
 
 | Check | Result |

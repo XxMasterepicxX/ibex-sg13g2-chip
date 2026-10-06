@@ -9,6 +9,22 @@
 set -e
 RUN=$(readlink -f "$1"); [ -f "$RUN/run_cfg.tcl" ] || { echo "usage: package.sh <run_folder>"; exit 1; }
 grep -q "SIGNOFF CLEAN" <(tail -1 "$RUN/signoff/CHECK.txt") || { echo "Sign off first: $RUN/signoff/CHECK.txt is not SIGNOFF CLEAN"; exit 1; }
+# The checker's final_artifacts row holds the MD5 of every file it signed off; package only those exact files.
+python3 - "$RUN" <<'EOF' || { echo "A signed-off file changed after signoff. Run chip/final_signoff.sh again."; exit 1; }
+import ast, hashlib, os, sys
+run = sys.argv[1]
+row = [l for l in open(run + "/signoff/CHECK.txt") if l.startswith("final_artifacts ")][0]
+for key, want in ast.literal_eval(row[row.index("{"):]).items():
+    path = key.split(":")[-1]
+    path = path if path.startswith("/") else os.path.join(run, path)
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    if h.hexdigest() != want:
+        sys.exit("changed since signoff: " + path)
+print("SIGNED_OFF_FILES_UNCHANGED")
+EOF
 K=$HOME/flash/chip/package
 N=RVSoC8787
 P=$RUN/package/IHP__$N
@@ -32,8 +48,8 @@ for c in slow typ fast; do cp "$RUN/signoff/pt_$c/flash_chip.$c.sdf" "$M/PlaceAn
 for x in starrc:typ starrc_cmax:cmax starrc_cmin:cmin; do
   cp "$RUN/signoff/${x%:*}/flash_chip.spef" "$M/PlaceAndRoute/parasitics/spef/flash_chip.${x#*:}.spef"
 done
-cp "$D/tb/tb_flash_soc.sv" "$M/testbenches/"
-cp "$D"/sw_suite/*.c "$D/sw_suite/build_all.sh" "$D/sw_suite/run_suite.sh" "$M/testbenches/"
+# The testbench, the simulation script and every test program with its built image, laid out as in the repository.
+cp -r "$D/tb" "$D/sim" "$D/sw" "$D/sw_suite" "$M/testbenches/"
 cp "$RUN/signoff/CHECK.txt" "$M/verification/sta/CHECK.txt"
 (cd "$V" && sha256sum gds/$N.gds netlist/$N.cdl netlist/flash_chip.v > SHA256SUMS)
 echo PACKAGE_DONE

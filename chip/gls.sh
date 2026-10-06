@@ -12,15 +12,20 @@ md5sum "$RUN/out/flash_chip.v" > "$G/netlist.md5"
 # against the 1 ns placeholder. PrimeTime, with the library's limits, decides hold. +tchk+edge+match lets the
 # per-edge SDF checks annotate where they can.
 export EXTRA_DEFINES=+tchk+edge+match
+P=""
 for c in slow typ fast; do
   t=max; [ $c = fast ] && t=min
   SDF_TYPE=$t "$S/run_suite.sh" "$G/$c" gate "$RUN/out/flash_chip.v" "$RUN/signoff/pt_$c/flash_chip.$c.sdf" > "$G/$c.log" 2>&1 &
+  P="$P $!"
 done
-wait
+BAD=0
+for p in $P; do wait $p || BAD=1; done
 for c in slow typ fast; do
   echo "== $c"
   cat "$G/$c/summary.txt"
   echo "timing check messages: $(cat "$G"/$c/*/sim.log | grep -ci 'timing violation')"
 done
-grep -h WRONG "$G"/*/summary.txt > /dev/null && { echo GLS_FAIL; exit 1; }
+# A missing or short summary is a failure too: each corner must judge all six programs OK.
+for c in slow typ fast; do [ "$(grep -c ' OK$' "$G/$c/summary.txt" 2>/dev/null)" = 6 ] || BAD=1; done
+[ $BAD = 0 ] || { echo GLS_FAIL; exit 1; }
 echo GLS_PASS

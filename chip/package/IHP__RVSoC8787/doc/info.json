@@ -7,7 +7,7 @@
   "trl": 0,
   "sealring_x": 1.708,
   "sealring_y": 1.753,
-  "repository": "",
+  "repository": "https://github.com/XxMasterepicxX/ibex-sg13g2-chip",
   "pdk_version": "IHP-Open-PDK 5e6d592e, 2026-09-01",
   "process": "SG13CMOS",
   "dependencies": {},
@@ -26,6 +26,6 @@
     "version": "v.1.0.0",
     "gds": "release/v.1.0.0/gds/RVSoC8787.gds",
     "netlist": "release/v.1.0.0/netlist/RVSoC8787.cdl",
-    "doc": "release/v.1.0.0/doc"
+    "doc": "doc"
   }
 }

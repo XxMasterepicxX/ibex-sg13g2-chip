@@ -13,7 +13,9 @@ parasitics, the RTL, the test programs and the signoff report.
   `/apps` and `/apps/settings` sets up their licenses.
 - Licenses for Fusion Compiler, Library Compiler, Library Manager, StarRC, PrimeTime SI, Formality, PrimePower,
   TestMAX, VCS and SpyGlass. Ansys RedHawk-SC is needed only for the voltage drop check.
-- `git`, `curl`, `unzip`, `rpm2cpio`, `cpio`, `make`, `g++` and `/usr/bin/python3.11`.
+- `git`, `curl`, `unzip`, `rpm2cpio`, `cpio`, `make`, `g++` and `/usr/bin/python3.11` with its shared library
+  `/usr/lib64/libpython3.11.so.1.0` and `/usr/include/python3.11/pyconfig-64.h` from python3.11-libs.
+- The system Qt 5.15.3 libraries, `/usr/lib64/libQt5*.so.5`. KLayout is built against them.
 - glibc 2.34 in `/apps/glibc234` for sv2v, and a RISC-V GCC in `/apps/riscv-toolchain` only to rebuild the test
   programs, which are already built in the repository.
 - About 5 GB of disk in your home folder: 3 GB for setup and about 2 GB per chip build.
@@ -49,9 +51,9 @@ pass before the next starts, except the clock crossing and voltage drop checks, 
 `cdc.log` and `ir.log` in the run folder. Follow `~/flash/runs/my_chip/make_chip.log`; it names the step that
 stopped it.
 
-To learn the flow, run it one stage at a time: put `STOP_AT=synth`, then `route`, `finish`, `signoff` and
-`proofs`, in front of the same command. Between stages, `chip/open_fc.sh <run> <step>` opens a saved step in Fusion Compiler and
-`chip/open_klayout.sh <run>` opens the finished chip in KLayout. To fix the timing margin by hand instead of with
+To learn the flow, run it one stage at a time: put `STOP_AT=synth`, then `route`, `finish` and `signoff` in front
+of the same command, and leave it out for the rest. Between stages, `chip/open_fc.sh <run> <step>` opens a saved
+step in Fusion Compiler and `chip/open_klayout.sh <run>` opens the finished chip in KLayout. To fix the timing margin by hand instead of with
 the automatic rounds, put `MARGIN=hand` in front; Stage 7.2 of `docs/ibex-flow.pdf` walks it, and its last section
 has labs that change one setting at a time.
 

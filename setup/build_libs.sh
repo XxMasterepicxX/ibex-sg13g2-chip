@@ -13,10 +13,15 @@ P=$HOME/flash/pdk/IHP-Open-PDK/ihp-sg13g2/libs.ref
 lc() { (cd "$1" && lc_shell -f "$2" < /dev/null > lc_output.txt 2>&1); }
 lm() { (cd "$1" && rm -rf "$3" && lm_shell -f "$2" < /dev/null > lm_output.txt 2>&1 && test -d "$3"); }
 
-[ -f "$I/db/sg13g2_stdcell_typ_1p20V_25C.db" ] || lc "$I/db" compile_libs.tcl
-[ -f "$I/sram_db/RM_IHPSG13_1P_1024x32_c2_bm_bist_typ_1p20V_25C.db" ] || lc "$I/sram_db" compile.tcl
-for f in "$I"/db/*.db "$I"/sram_db/*.db; do test -s "$f"; done
-echo "DB_OK $(ls "$I"/db/*.db "$I"/sram_db/*.db | wc -l) libraries"
+[ "$(ls "$I"/db/*.db 2>/dev/null | wc -l)" = 9 ] || lc "$I/db" compile_libs.tcl
+[ "$(ls "$I"/sram_db/*.db 2>/dev/null | wc -l)" = 3 ] || lc "$I/sram_db" compile.tcl
+DBS="db/sg13g2_stdcell_slow_1p08V_125C db/sg13g2_stdcell_slow_1p35V_125C db/sg13g2_stdcell_typ_1p20V_25C
+  db/sg13g2_stdcell_typ_1p50V_25C db/sg13g2_stdcell_fast_1p32V_m40C db/sg13g2_stdcell_fast_1p65V_m40C
+  db/sg13g2_io_slow_1p08V_3p0V_125C db/sg13g2_io_typ_1p2V_3p3V_25C db/sg13g2_io_fast_1p32V_3p6V_m40C
+  sram_db/RM_IHPSG13_1P_1024x32_c2_bm_bist_slow_1p08V_125C sram_db/RM_IHPSG13_1P_1024x32_c2_bm_bist_typ_1p20V_25C
+  sram_db/RM_IHPSG13_1P_1024x32_c2_bm_bist_fast_1p32V_m55C"
+for f in $DBS; do test -s "$I/$f.db"; done
+echo "DB_OK $(echo $DBS | wc -w) libraries"
 
 [ -d "$I/ndm/sg13g2_stdcell.ndm" ] || lm "$I/ndm" build_stdcell.tcl sg13g2_stdcell.ndm
 [ -d "$I/sram_ndm/sg13g2_sram.ndm" ] || lm "$I/sram_ndm" build.tcl sg13g2_sram.ndm
@@ -39,6 +44,7 @@ grd "$I/rc" sg13g2_typ.itf &
 grd "$I/rc/rcmax" sg13g2_spec_rcmax.itf &
 grd "$I/rc/rcmin" sg13g2_spec_rcmin.itf &
 wait
-for f in "$I/rc/sg13g2_typ.nxtgrd" "$I/rc/rcmax/sg13g2_spec_rcmax.nxtgrd" \
-         "$I/rc/rcmin/sg13g2_spec_rcmin.nxtgrd"; do test -s "$f"; done
+for f in rc/sg13g2_typ rc/rcmax/sg13g2_spec_rcmax rc/rcmin/sg13g2_spec_rcmin; do
+  test -s "$I/$f.nxtgrd" && test -s "$I/$f.tluplus"
+done
 echo "RC_OK"

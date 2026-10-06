@@ -7,7 +7,7 @@
 set -e
 R=$(readlink -f "$1"); M=$2; BP=${3:-}
 DESIGN=$(awk '$2=="DESIGN"{print $3}' "$R/run_cfg.tcl")
-F=$R/chip; mkdir -p $F
+F=$R/chip; mkdir -p $F; rm -f $F/done
 export PDK_ROOT=$HOME/flash/pdk/IHP-Open-PDK PDK=ihp-sg13g2 KLAYOUT_PATH=$HOME/flash/pdk/IHP-Open-PDK/ihp-sg13g2/libs.tech/klayout
 export PATH=$HOME/flash/tools/bin:$HOME/flash/tools/pyenv/bin:$PATH
 C=$HOME/flash/pdk_cfg/ihp_sg13g2
@@ -31,4 +31,6 @@ python3 "$HOME/flash/flow/check.py" --begin "$R" chip_precheck
 wait
 python3 "$HOME/flash/flow/check.py" --stamp "$R" chip_drc chip_drc "$(cat $F/drc.exit)"
 python3 "$HOME/flash/flow/check.py" --stamp "$R" chip_precheck chip_precheck "$(cat $F/precheck.exit)"
+[ "$(cat $F/drc.exit)" = 0 ] && [ "$(cat $F/precheck.exit)" = 0 ] \
+  || { echo "Chip DRC or the precheck did not pass. See $F/drc.log and $F/precheck.log"; exit 1; }
 echo DONE > $F/done
