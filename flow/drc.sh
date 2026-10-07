@@ -9,6 +9,7 @@
 G=$1 TOP=$2 D=$3 L=$4; shift 4
 export PDK_ROOT=$HOME/flash/pdk/IHP-Open-PDK PDK=ihp-sg13g2 KLAYOUT_PATH=$HOME/flash/pdk/IHP-Open-PDK/ihp-sg13g2/libs.tech/klayout
 export PATH=$HOME/flash/tools/bin:$HOME/flash/tools/pyenv/bin:$PATH
+trap 'kill -KILL -- -$P 2> /dev/null; kill $W 2> /dev/null; exit 130' INT TERM HUP
 for try in 1 2; do
   rm -f "$D.timeout"
   setsid python3 "$KLAYOUT_PATH/tech/drc/run_drc.py" --path="$G" --topcell="$TOP" --run_dir="$D" "$@" > "$L" 2>&1 &
@@ -19,6 +20,8 @@ for try in 1 2; do
   W=$!
   X=0; wait $P || X=$?
   kill $W 2> /dev/null; wait $W 2> /dev/null
+  # Workers left behind by a launcher that died would keep files open in the run folder.
+  kill -KILL -- -$P 2> /dev/null
   if [ -f "$D.timeout" ]; then X=124; elif grep -q "generated an exception" "$L"; then X=3; fi
   [ $X = 124 ] && [ $try = 1 ] || break
   rm -rf "$D.timed_out" "$L.timed_out"

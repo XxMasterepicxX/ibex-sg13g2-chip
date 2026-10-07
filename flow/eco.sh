@@ -78,7 +78,23 @@ passed "$RUN/signoff/CHECK.txt" > "$D/passed_before.txt"
 STATE="$(cd "$RUN" && ls -d *.nlib out rpt signoff fc_final.log fc_command.log fc_output.txt chip 2>/dev/null | tr '\n' ' ')"
 KEEP=$RUN/.eco_prev
 R=$RUN/eco_rejected_$N
-restore() { (cd "$RUN" && rm -rf $STATE && mv "$KEEP"/* . && rmdir "$KEEP"); }
+# The failed attempt is moved aside before the saved run comes back, and deleted last. On NFS a folder that holds a
+# file some process still has open cannot be deleted, and deleting first could leave the run half gone.
+restore() {
+  local A x m moved=
+  A=$(mktemp -d "$RUN/.eco_undone_XXXXXX") || { echo "FLASH_ECO_FAILED could not restore the run; the saved copy is $KEEP"; exit 1; }
+  for x in $STATE; do
+    [ -e "$RUN/$x" ] || continue
+    if ! mv "$RUN/$x" "$A"/; then
+      for m in $moved; do mv "$A/$m" "$RUN"/; done
+      echo "FLASH_ECO_FAILED could not restore the run; the saved copy is $KEEP"; exit 1
+    fi
+    moved="$moved $x"
+  done
+  mv "$KEEP"/* "$RUN"/ && rmdir "$KEEP" \
+    || { echo "FLASH_ECO_FAILED could not restore the run; the saved copy is $KEEP, the attempt is in $A"; exit 1; }
+  rm -rf "$A" 2> /dev/null || true
+}
 rm -rf "$KEEP"; mkdir "$KEEP"
 (cd "$RUN" && cp -a $STATE "$KEEP"/) || { rm -rf "$KEEP"; echo "FLASH_ECO_FAILED could not save the run first"; exit 1; }
 ECO_CHANGES="$D/eco_changes.tcl" START_AT=final $FLOW_DIR/run_fc.sh "$RUN" || {
