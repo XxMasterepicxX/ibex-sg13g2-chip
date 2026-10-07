@@ -53,9 +53,9 @@ stopped it.
 
 To learn the flow, run it one stage at a time: put `STOP_AT=synth`, then `route`, `finish` and `signoff` in front
 of the same command, and leave it out for the rest. Between stages, `chip/open_fc.sh <run> <step>` opens a saved
-step in Fusion Compiler and `chip/open_klayout.sh <run>` opens the finished chip in KLayout. To fix the timing margin by hand instead of with
-the automatic rounds, put `MARGIN=hand` in front; Stage 7.2 of `docs/ibex-flow.pdf` walks it, and its last section
-has labs that change one setting at a time.
+step in Fusion Compiler and `chip/open_klayout.sh <run>` opens the finished chip in KLayout. To fix the timing
+margin by hand instead of with the automatic rounds, put `MARGIN=hand` in front; Stage 7.2 of `docs/ibex-flow.pdf`
+walks it.
 
 For the voltage drop check, set the Ansys license first. On the ECE servers it is port 1055 on the Synopsys
 license server: `source /apps/settings; export ANSYSLMD_LICENSE_FILE=1055@${SNPSLMD_LICENSE_FILE#*@}`.
@@ -76,7 +76,8 @@ with `SIGNOFF CLEAN`, and `package.sh` with `PACKAGE_OK`. The package is in `$R/
 ## Documents
 
 `docs/ibex-flow.pdf` walks every step above with the command, the check that must pass and a screenshot
-from a fresh build of this repository.
+from a fresh build of this repository. `docs/ibex-labs.pdf` has six experiments that each change one setting and
+compare the result, with `chip/compare_runs.sh`.
 
 ## What is where
 
