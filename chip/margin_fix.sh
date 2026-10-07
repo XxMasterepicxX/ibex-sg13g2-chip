@@ -71,10 +71,19 @@ k=0; t=0
 # not, so this round buffers their drivers from the start instead of repeating the same list.
 cat "$RUN"/eco_rejected_*/pt_*_noise_violators.rpt 2> /dev/null \
   | awk '$2 ~ /^\(/ && $NF ~ /^-[0-9.]+$/ {print $1}' | sort -u > prior_victims.txt
-# Each report is used once: this round keeps it, so a later round never buffers the same victims again.
+# Each report is used once: this round keeps it, so a later round never buffers the same victims again. A round
+# that ends before its signoff learned nothing new, so it gives them back.
 for f in "$RUN"/eco_rejected_*/pt_*_noise_violators.rpt; do
-  if [ -f "$f" ]; then mkdir -p prior_reports && mv "$f" "prior_reports/$(basename "$(dirname "$f")")_$(basename "$f")"; fi
+  if [ -f "$f" ]; then d=prior_reports/$(basename "$(dirname "$f")"); mkdir -p "$d" && mv "$f" "$d"/; fi
 done
+give_back() {
+  local d
+  for d in prior_reports/*/; do
+    [ -d "$d" ] && [ -n "$(ls -A "$d")" ] || continue
+    mkdir -p "$RUN/$(basename "$d")" && mv "$d"* "$RUN/$(basename "$d")"/ \
+      || log "WARNING could not give back the noise reports in $H/$d; copy them to $RUN/$(basename "$d") by hand"
+  done
+}
 if [ -s prior_victims.txt ]; then
   log "noise victims of the undone round: $(wc -l < prior_victims.txt)"
   FLASH_PRIOR_VICTIMS=$H/prior_victims.txt evaluate cand0.tcl > /dev/null
@@ -107,7 +116,7 @@ done
 # 4. The gate. Only the SRAM outputs that Fusion Compiler buffers after this test may still show a violation.
 python3 "$C/margin/gate.py" cand$k.eval > gate.txt
 cat gate.txt
-grep -q "MARGIN_GATE PASS" gate.txt || { log "STOP the list did not pass the gate; nothing was applied. See $H"; exit 1; }
+grep -q "MARGIN_GATE PASS" gate.txt || { give_back; log "STOP the list did not pass the gate; nothing was applied. See $H"; exit 1; }
 # The flop swap goes in once, in the first round that is kept.
 SWAP=; [ -f "$RUN/margin/sclk_swap.kept" ] || SWAP=$C/margin/sclk_swap.tcl
 { cat cand$k.tcl; echo current_instance; cat dout_fc.tcl; [ -n "$SWAP" ] && cat "$SWAP"; } > fix.tcl
@@ -115,6 +124,11 @@ export AFTER_FC="METAL_FILL=mid bash $F/finish.sh . 75 bondpads"
 log "apply $(grep -c '^insert_buffer\|^size_cell' fix.tcl) changes"
 FC_CHANGES=$H/fix.tcl $E "$RUN" slow fc > apply.log 2>&1
 grep -E "FLASH_ECO_(APPLIED|LEGALITY|KEPT|REJECTED|FAILED)" apply.log
+# A rejected round whose signoff stopped before PrimeTime saved no new noise reports, so it gives back the old ones.
+if grep -q FLASH_ECO_FAILED apply.log \
+  || { grep -q FLASH_ECO_REJECTED apply.log && ! ls "$RUN"/eco_rejected_*/pt_*_noise_violators.rpt > /dev/null 2>&1; }; then
+  give_back
+fi
 grep -q FLASH_ECO_KEPT apply.log && [ -n "$SWAP" ] && touch "$RUN/margin/sclk_swap.kept"
 tail -1 "$RUN/signoff/CHECK.txt"
 log DONE

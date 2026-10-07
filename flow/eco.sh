@@ -102,8 +102,12 @@ ECO_CHANGES="$D/eco_changes.tcl" START_AT=final $FLOW_DIR/run_fc.sh "$RUN" || {
   echo "FLASH_ECO_FAILED Fusion Compiler, see $R/fc_final.log; restored the run"; exit 1; }
 grep "^FLASH_ECO_\(APPLIED\|RELEASED\|LEGALITY_PASS\)" "$RUN/fc_final.log"
 if [ -n "$AFTER_FC" ] && ! (cd "$RUN" && eval "$AFTER_FC") > "$D/after_fc.log" 2>&1; then
-  rm -rf "$R"; mkdir -p "$R"; cp -a "$D" "$RUN/fc_final.log" "$R"/; restore
-  echo "FLASH_ECO_FAILED AFTER_FC, see $R/$N/after_fc.log; restored the run"; exit 1
+  rm -rf "$R"; mkdir -p "$R"; cp -a "$D" "$RUN/fc_final.log" "$R"/
+  # The finishing logs and DRC results say why it failed; the run's own chip folder goes back to the saved one.
+  mkdir -p "$R/chip"
+  cp -a "$RUN"/chip/*.log "$RUN"/chip/*.exit "$RUN"/chip/drc "$RUN"/chip/precheck "$RUN"/chip/*.timed_out "$R/chip"/ 2> /dev/null
+  restore
+  echo "FLASH_ECO_FAILED AFTER_FC, see $R/$N/after_fc.log and $R/chip; restored the run"; exit 1
 fi
 touch "$D/signoff_start"
 $FLOW_DIR/signoff.sh "$RUN"
