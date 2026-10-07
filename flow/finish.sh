@@ -22,13 +22,19 @@ python3 $C/density.py $F/chip_filled.gds chip_$DESIGN > $F/density.txt 2>&1
 python3 "$HOME/flash/flow/check.py" --begin "$R" chip_drc
 python3 "$HOME/flash/flow/check.py" --begin "$R" chip_precheck
 # Whole-chip DRC and IHP's tapeout precheck, the rule subset IHP requires before accepting a design, read the same
-# file and run at once. Each spends most of its 50 minutes in the deep-mode maximal deck, which keeps about one
-# core busy however many threads it is given.
-( X=0; python3 $KLAYOUT_PATH/tech/drc/run_drc.py --path=$F/chip_filled.gds --topcell=chip_$DESIGN --run_dir=$F/drc --antenna --mp=8 > $F/drc.log 2>&1 || X=$?
-  echo $X > $F/drc.exit ) &
-( X=0; python3 $KLAYOUT_PATH/tech/drc/run_drc.py --path=$F/chip_filled.gds --topcell=chip_$DESIGN --run_dir=$F/precheck --precheck_drc --mp=8 > $F/precheck.log 2>&1 || X=$?
-  echo $X > $F/precheck.exit ) &
-wait
+# file and run at once, each through flow/drc.sh. Each spends most of its 50 minutes in the deep-mode maximal deck.
+drc_job() {  # <name> <run_drc.py options...>
+  local n=$1 X=0; shift
+  bash $HOME/flash/flow/drc.sh $F/chip_filled.gds chip_$DESIGN $F/$n $F/$n.log "$@" || X=$?
+  echo $X > $F/$n.exit
+}
+rm -f $F/drc.exit $F/precheck.exit
+drc_job drc --antenna --mp=8 & D=$!
+drc_job precheck --precheck_drc --mp=8 & Q=$!
+XD=0; wait $D || XD=$?
+XQ=0; wait $Q || XQ=$?
+[ $XD = 0 ] && [ $XQ = 0 ] && [ -f $F/drc.exit ] && [ -f $F/precheck.exit ] \
+  || { echo "A DRC job did not finish. See $F/drc.log and $F/precheck.log"; exit 1; }
 python3 "$HOME/flash/flow/check.py" --stamp "$R" chip_drc chip_drc "$(cat $F/drc.exit)"
 python3 "$HOME/flash/flow/check.py" --stamp "$R" chip_precheck chip_precheck "$(cat $F/precheck.exit)"
 [ "$(cat $F/drc.exit)" = 0 ] && [ "$(cat $F/precheck.exit)" = 0 ] \

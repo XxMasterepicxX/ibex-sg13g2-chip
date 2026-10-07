@@ -25,6 +25,13 @@ for key, want in ast.literal_eval(row[row.index("{"):]).items():
         sys.exit("changed since signoff: " + path)
 print("SIGNED_OFF_FILES_UNCHANGED")
 EOF
+# The LVS netlist, the SDFs and the SPEFs are not in that row; final_signoff.sh hashed them at a clean signoff.
+REL="signoff/lvs_chip/chip.cdl signoff/pt_fast/flash_chip.fast.sdf signoff/pt_slow/flash_chip.slow.sdf
+  signoff/pt_typ/flash_chip.typ.sdf signoff/starrc/flash_chip.spef signoff/starrc_cmax/flash_chip.spef
+  signoff/starrc_cmin/flash_chip.spef"
+[ "$(awk '{sub(/^\*/, "", $2); print $2}' "$RUN/signoff/release_files.md5" 2> /dev/null | sort | tr '\n' ' ')" = "$(echo $REL | tr ' ' '\n' | sort | tr '\n' ' ')" ] \
+  && (cd "$RUN" && md5sum -c --quiet signoff/release_files.md5) \
+  || { echo "The timing, parasitics or LVS files differ from the clean signoff. Run chip/final_signoff.sh again."; exit 1; }
 K=$HOME/flash/chip/package
 N=RVSoC8787
 P=$RUN/package/IHP__$N
@@ -65,7 +72,7 @@ grep -h "^XOR\|^LAYERS\|^TEXTS" "$RUN/package/xor.txt" "$RUN/package/texts.txt"
 export PDK_ROOT=$HOME/flash/pdk/IHP-Open-PDK PDK=ihp-sg13g2 KLAYOUT_PATH=$HOME/flash/pdk/IHP-Open-PDK/ihp-sg13g2/libs.tech/klayout
 O=$RUN/package/precheck
 set +e
-python3 "$KLAYOUT_PATH/tech/drc/run_drc.py" --path="$B" --topcell=$N --run_dir="$O" --precheck_drc --mp=8 > "$O.log" 2>&1
+bash $HOME/flash/flow/drc.sh "$B" $N "$O" "$O.log" --precheck_drc --mp=8
 X=$?
 echo "PRECHECK_EXIT=$X" | tee -a "$O.log"
 # The exit code alone does not say the layout is clean: count the markers in every result database.

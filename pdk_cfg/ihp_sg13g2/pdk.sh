@@ -11,8 +11,7 @@ RC_CMIN_GRID=${RC_CMIN_GRID:-$PDK_WORK/rc/rcmin/sg13g2_spec_rcmin.nxtgrd}
 RC_MAP=$PDK_WORK/rc/tf_itf.map
 KL_TECH=$PDK_ROOT/libs.tech/klayout/tech
 CORNER_NAMES="slow typ fast"
-# Official IHP decks. Antenna is off by default in IHP's DRC, so it is switched on.
-drc_run() { python3 $KL_TECH/drc/run_drc.py --path="$1" --topcell="$2" --run_dir="$3" --antenna --mp=8 --run_mode=deep; }
+# IHP's LVS deck. DRC runs through flow/drc.sh.
 lvs_run() { python3 $KL_TECH/lvs/run_lvs.py --layout="$1" --netlist="$2" --topcell="$3" --run_dir="$4" --run_mode=deep "${@:5}"; }
 
 # Clock period for the counter regression.

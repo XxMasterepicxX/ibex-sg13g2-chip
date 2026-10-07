@@ -155,12 +155,13 @@ fi
 drc_step() {
   begin drc || exit 1
   rm -rf "$S/drc"
-  # A design with an IO ring is a chip: its density rules are judged on the filled chip, not here.
+  # A design with an IO ring is a chip: its density rules are judged on the filled chip, not here. Antenna is off by
+  # default in IHP's DRC, so it is switched on.
   DRC_CHIP=$([ -n "$(cfg IO_RING)" ] && echo 1)
-  DRC_CHIP=$DRC_CHIP drc_run "$RUN/out/$DESIGN.gds" "$DESIGN" "$S/drc" < /dev/null > "$S/drc.log" 2>&1
-  X=$?; echo "DRC_EXIT=$X" >> "$S/drc.log"
-  # KLayout's run_drc.py exits 1 when it finds markers, the same code as a crash. A finished run logs its run time
-  # and writes its result databases; the drc row then judges the markers, chip-only rules on the filled chip.
+  X=0; DRC_CHIP=$DRC_CHIP bash $HOME/flash/flow/drc.sh "$RUN/out/$DESIGN.gds" "$DESIGN" "$S/drc" "$S/drc.log"     --antenna --mp=8 --run_mode=deep < /dev/null || X=$?
+  echo "DRC_EXIT=$X" >> "$S/drc.log"
+  # run_drc.py exits 1 when it finds markers; drc.sh turns a crash into 3 and a stall into 124. A finished run logs
+  # its run time and writes its result databases; the drc row then judges the markers, chip-only rules on the chip.
   [ "$X" = 1 ] && grep -q "Total DRC Run time" "$S/drc.log" && ls "$S"/drc/*.lyrdb > /dev/null 2>&1 && X=0
   stamp drc drc "$X"
 }
