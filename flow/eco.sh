@@ -101,6 +101,14 @@ ECO_CHANGES="$D/eco_changes.tcl" START_AT=final $FLOW_DIR/run_fc.sh "$RUN" || {
   rm -rf "$R"; mkdir -p "$R"; cp -a "$D" "$RUN/fc_final.log" "$R"/; restore
   echo "FLASH_ECO_FAILED Fusion Compiler, see $R/fc_final.log; restored the run"; exit 1; }
 grep "^FLASH_ECO_\(APPLIED\|RELEASED\|LEGALITY_PASS\)" "$RUN/fc_final.log"
+# As in make_chip.sh, a check-only signoff records the current inputs first. AFTER_FC stamps its results against
+# that record, and signoff would otherwise rewrite it after any script or PDK file change and mark them stale.
+if [ -n "$AFTER_FC" ]; then
+  $FLOW_DIR/signoff.sh "$RUN" check > "$D/signoff_inputs.log" 2>&1
+  grep -q "^FLASH_DEPENDENCY_MANIFEST_\(UPDATED\|UNCHANGED\)" "$D/signoff_inputs.log" || {
+    rm -rf "$R"; mkdir -p "$R"; cp -a "$D" "$RUN/fc_final.log" "$R"/; restore
+    echo "FLASH_ECO_FAILED the signoff inputs were not recorded, see $R/$N/signoff_inputs.log; restored the run"; exit 1; }
+fi
 if [ -n "$AFTER_FC" ] && ! (cd "$RUN" && eval "$AFTER_FC") > "$D/after_fc.log" 2>&1; then
   rm -rf "$R"; mkdir -p "$R"; cp -a "$D" "$RUN/fc_final.log" "$R"/
   # The finishing logs and DRC results say why it failed; the run's own chip folder goes back to the saved one.
