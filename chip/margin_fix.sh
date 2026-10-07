@@ -66,8 +66,26 @@ evaluate() {
   grep -h "^FLASH_EVAL" eval_*_func.log eval_*_shift.log > "${1%.tcl}.eval"
   cat "${1%.tcl}.eval"
 }
-# When nothing is dropped but the gate still fails, targeted changes for what is left are added, up to 3 times.
 k=0; t=0
+# An undone round leaves its noise report behind. Real routing found those victims where PrimeTime's estimate did
+# not, so this round buffers their drivers from the start instead of repeating the same list.
+cat "$RUN"/eco_rejected_*/pt_*_noise_violators.rpt 2> /dev/null \
+  | awk '$2 ~ /^\(/ && $NF ~ /^-[0-9.]+$/ {print $1}' | sort -u > prior_victims.txt
+# Each report is used once: this round keeps it, so a later round never buffers the same victims again.
+for f in "$RUN"/eco_rejected_*/pt_*_noise_violators.rpt; do
+  if [ -f "$f" ]; then mkdir -p prior_reports && mv "$f" "prior_reports/$(basename "$(dirname "$f")")_$(basename "$f")"; fi
+done
+if [ -s prior_victims.txt ]; then
+  log "noise victims of the undone round: $(wc -l < prior_victims.txt)"
+  FLASH_PRIOR_VICTIMS=$H/prior_victims.txt evaluate cand0.tcl > /dev/null
+  python3 "$C/margin/targeted.py" "MF${n}P" dout_pins.txt > prior.tcl
+  if [ -s prior.tcl ]; then
+    log "prior victims pass: $(wc -l < prior.tcl) changes"
+    { cat cand0.tcl; echo current_instance; cat prior.tcl; } > cand1.tcl
+    k=1
+  fi
+fi
+# When nothing is dropped but the gate still fails, targeted changes for what is left are added, up to 3 times.
 while :; do
   evaluate cand$k.tcl
   cat bad_cells_*.txt > cand$k.bad 2> /dev/null

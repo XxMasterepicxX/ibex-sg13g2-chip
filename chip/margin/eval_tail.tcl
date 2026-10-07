@@ -50,6 +50,14 @@ foreach line [split $nz \n] {
 foreach line [split $drc \n] {
   if {[regexp {^\s*(\S+)\s+\S+\s+\S+\s+\S+\s+\(VIOLATED} $line all pin]} { puts "FLASH_DRC_DRIVER $pin [flash_driver $pin]" }
 }
+# Noise victims that real routing found in an undone round, one pin per line, from margin_fix.sh.
+if {[info exists env(FLASH_PRIOR_VICTIMS)] && [file exists $env(FLASH_PRIOR_VICTIMS)]} {
+  set fh [open $env(FLASH_PRIOR_VICTIMS)]
+  foreach pin [read $fh] {
+    if {[sizeof_collection [get_pins -quiet $pin]]} { puts "FLASH_NOISE_DRIVER [flash_driver $pin]" }
+  }
+  close $fh
+}
 foreach_in_collection p [get_timing_paths -delay_type min -slack_lesser_than 0.09 -max_paths 50 -nworst 1] {
   puts "FLASH_HOLD_END [get_object_name [get_attribute $p endpoint]] [format %.3f [get_attribute $p slack]]"
 }

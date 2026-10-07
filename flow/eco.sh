@@ -97,6 +97,10 @@ LOST=$(comm -23 "$D/passed_before.txt" <(passed "$RUN/signoff/CHECK.txt") | tr '
 if [ -z "$AFTER" ] || [ "$AFTER" -lt "${BEFORE:-0}" ] || [ -n "$LOST" ]; then
   rm -rf "$R"; mkdir -p "$R"
   cp -a "$D" "$RUN/signoff/CHECK.txt" "$RUN/fc_final.log" "$R"/
+  # The attempt's noise victims, so the next margin round can fix them before it is applied again.
+  for f in "$RUN"/signoff/pt_*/noise_violators.rpt; do
+    [ -f "$f" ] && cp "$f" "$R/$(basename "$(dirname "$f")")_noise_violators.rpt"
+  done
   restore
   echo "FLASH_ECO_REJECTED ${AFTER:-no} checks pass against $BEFORE before; newly failing: ${LOST:-none}; restored the run, the attempt is in $R"
   exit 0
